@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="bestrag",
-    version="0.1.3",
+    version="0.2.0",
     description="BestRAG (Best Retrieval Augmented) is a library for storing and"
     " searching document embeddings in a Qdrant vector database. It uses a "
     "hybrid embedding technique combining dense, late interaction and sparse representations for better performance.",
@@ -13,7 +13,7 @@ setup(
     author_email="abdulsamadsid1@gmail.com",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/samadpls/bestrag",
+    url="https://github.com/samadpls/bestRAG",
     packages=find_packages(),
     install_requires=[
         "fastembed==0.4.1",

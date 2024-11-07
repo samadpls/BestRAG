@@ -28,10 +28,10 @@ class BestRAG:
             interaction model to use. Defaults to "BAAI/bge-small-en-v1.5".
     """
 
-    def __init__(self, 
-                 url: str, 
-                 api_key: str, 
-                 collection_name: str, 
+    def __init__(self,
+                 url: str,
+                 api_key: str,
+                 collection_name: str,
                  late_interaction_model_name: Optional[str] = "BAAI/bge-small-en-v1.5"
                  ):
         self.collection_name = collection_name
@@ -57,9 +57,9 @@ class BestRAG:
                 collection_name=self.collection_name,
                 vectors_config={
                     "dense-vector": models.VectorParams(
-                        size=384, 
+                        size=384,
                         distance=Distance.COSINE
-                        ),
+                    ),
                     "output-token-embeddings": models.VectorParams(
                         size=384,
                         distance=Distance.COSINE,
@@ -180,6 +180,7 @@ class BestRAG:
                 collection_name=self.collection_name,
                 points=[point]
             )
+
             print(
                 f"Stored embedding for page {page_num + 1} in collection '{self.collection_name}'.")
 
