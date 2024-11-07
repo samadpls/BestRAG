@@ -1,0 +1,8 @@
+fastembed==0.4.1
+streamlit
+pytest
+flake8
+PyPDF2
+qdrant-client
+onnxruntime==1.19.2
+pytest
