@@ -6,6 +6,8 @@
 [![License](https://img.shields.io/badge/License-MIT%202.0-blue.svg)](LICENSE)
 [![Run Pytest](https://github.com/samadpls/BestRAG/actions/workflows/pytest.yml/badge.svg?branch=main)](https://github.com/samadpls/BestRAG/actions/workflows/pytest.yml)
 ![GitHub stars](https://img.shields.io/github/stars/samadpls/BestRAG?color=red&label=stars&logoColor=black&style=social)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/bestrag?style=social)
+
 
 
 Welcome to **BestRAG**! This Python library enables you to efficiently store and retrieve embeddings using a hybrid Retrieval-Augmented Generation (RAG) approach. It combines dense, sparse, and late interaction embeddings to provide a robust solution for handling large datasets.
