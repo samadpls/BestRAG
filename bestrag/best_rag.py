@@ -1,11 +1,11 @@
-"""B-RAG"""
+"""BestRAG"""
 # Authors: Abdul Samad Siddiqui <abdulsamadsid1@gmail.com>
 
 import re
 import uuid
 from typing import List, Optional
 from qdrant_client import QdrantClient, models
-from qdrant_client.http.models import Distance, VectorParams
+from qdrant_client.http.models import Distance
 from fastembed import TextEmbedding
 from fastembed.sparse.bm25 import Bm25
 import PyPDF2
@@ -35,6 +35,8 @@ class BestRAG:
                  late_interaction_model_name: Optional[str] = "BAAI/bge-small-en-v1.5"
                  ):
         self.collection_name = collection_name
+        self.api_key = api_key
+        self.url = url
         self.client = QdrantClient(url=url, api_key=api_key)
 
         self.dense_model = TextEmbedding()
@@ -216,7 +218,7 @@ class BestRAG:
                 models.Prefetch(
                     query=query_vector["dense-vector"],
                     using="dense-vector",
-                    limit=50,
+                    limit=20,
                 )
             ],
             query=query_vector["output-token-embeddings"],
@@ -225,3 +227,18 @@ class BestRAG:
         )
 
         return results
+
+    def __str__(self):
+        """
+        Return a string representation of the BestRAG object, including its parameters.
+        """
+        info = (
+            "**************************************************\n"
+            "* BestRAG Object Information                     *\n"
+            "**************************************************\n"
+            f"* URL: {self.url}\n"
+            f"* API Key: {self.api_key}\n"
+            f"* Collection Name: {self.collection_name}\n"
+            "**************************************************"
+        )
+        return info

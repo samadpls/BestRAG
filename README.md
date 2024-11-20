@@ -10,9 +10,14 @@
 
 
 
-Welcome to **BestRAG**! This Python library enables you to efficiently store and retrieve embeddings using a hybrid Retrieval-Augmented Generation (RAG) approach. It combines dense, sparse, and late interaction embeddings to provide a robust solution for handling large datasets.
+Introducing **BestRAG**! This Python library leverages a hybrid Retrieval-Augmented Generation (RAG) approach to efficiently store and retrieve embeddings. By combining dense, sparse, and late interaction embeddings, **BestRAG** offers a robust solution for managing large datasets.
 
----
+
+## ✨ Features
+
+🚀 **Hybrid RAG**: Utilizes dense, sparse, and late interaction embeddings for enhanced performance.  
+🔌 **Easy Integration**: Simple API for storing and searching embeddings.  
+📄 **PDF Support**: Directly store embeddings from PDF documents.  
 
 ## 🚀 Installation
 
@@ -43,13 +48,7 @@ results = rag.search(query="your search query", limit=10)
 print(results)
 ```
 
-> **Note**: To generate your API key and endpoint, visit [Qdrant](https://qdrant.tech/).
-
-## ✨ Features
-
-- **Hybrid RAG**: Utilizes dense, sparse, and late interaction embeddings for enhanced performance.
-- **Easy Integration**: Simple API for storing and searching embeddings.
-- **PDF Support**: Directly store embeddings from PDF documents.
+> **Note**: Qdrant offers a free tier with 1GB of storage. To generate your API key and endpoint, visit [Qdrant](https://qdrant.tech/).
 
 ## 🤝 Contributing
 
