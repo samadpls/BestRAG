@@ -41,7 +41,7 @@ rag = BestRAG(
 )
 
 # Store embeddings from a PDF
-rag.store_pdf_embeddings("your_pdf_file.pdf")
+rag.store_pdf_embeddings("your_pdf_file.pdf", "pdf_name")
 
 # Search using a query
 results = rag.search(query="your search query", limit=10)
@@ -51,7 +51,7 @@ print(results)
 rag.delete_pdf_embeddings("home/notes.pdf")
 ```
 
-> **Note**: Qdrant offers a free tier with 1GB of storage. To generate your API key and endpoint, visit [Qdrant](https://qdrant.tech/).
+> **Note**: Qdrant offers a free tier with 4GB of storage. To generate your API key and endpoint, visit [Qdrant](https://qdrant.tech/).
 
 ## 🤝 Contributing
 
