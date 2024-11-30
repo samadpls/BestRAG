@@ -96,7 +96,7 @@ class BestRAG:
         text = re.sub(r'[^\x00-\x7F]+', '', text)
         text = re.sub(r'[\u200B-\u200D\uFEFF]', '', text)
         text = re.sub(r'\s+', ' ', text)
-    
+
         return text.strip()
 
     def _get_dense_embedding(self, text: str):
@@ -149,12 +149,16 @@ class BestRAG:
             reader = PyPDF2.PdfReader(pdf_file)
             return [page.extract_text() for page in reader.pages]
 
-    def store_pdf_embeddings(self, pdf_path: str):
+    def store_pdf_embeddings(self, pdf_path: str,
+                             pdf_name: str,
+                             metadata: Optional[dict] = None):
         """
         Store the embeddings for each page of a PDF file in the Qdrant collection.
 
         Args:
             pdf_path (str): The path to the PDF file.
+            pdf_name (str): The name of the PDF file.
+            metadata (Optional[dict]): Additional metadata to store with each embedding.
         """
         texts = self._extract_pdf_text_per_page(pdf_path)
 
@@ -176,8 +180,12 @@ class BestRAG:
 
             payload = {
                 "text": clean_text,
-                "page_number": page_num + 1
+                "page_number": page_num + 1,
+                "pdf_name": pdf_name
             }
+
+            if metadata:
+                payload.update(metadata)
 
             point = models.PointStruct(
                 id=str(uuid.uuid4()),
@@ -190,8 +198,34 @@ class BestRAG:
                 points=[point]
             )
 
-            print(
-                f"Stored embedding for page {page_num + 1} in collection '{self.collection_name}'.")
+            print(f"Stored embedding for page {page_num + 1} \
+                of '{pdf_name}' in collection '{self.collection_name}'.")
+
+    def delete_pdf_embeddings(self, pdf_name: str):
+        """
+        Delete all embeddings associated with a given PDF name from the Qdrant collection.
+
+        Args:
+            pdf_name (str): The name of the PDF file whose embeddings should be deleted.
+        """
+        filter_ = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="pdf_name",
+                    match=models.MatchValue(value=pdf_name)
+                )
+            ]
+        )
+
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=models.FilterSelector(
+                filter=filter_
+            )
+        )
+
+        print(f"Deleted all embeddings for PDF '{pdf_name}' \
+            from collection '{self.collection_name}'.")
 
     def search(self, query: str, limit: int = 10):
         """

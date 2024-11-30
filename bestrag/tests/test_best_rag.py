@@ -103,7 +103,7 @@ def test_store_pdf_embeddings(best_rag_instance, tmp_path):
             patch.object(best_rag_instance.client, 'upsert',
                          return_value=None) as mock_upsert:
 
-        best_rag_instance.store_pdf_embeddings(str(pdf_path))
+        best_rag_instance.store_pdf_embeddings(str(pdf_path), "sample.pdf")
         assert mock_upsert.call_count == 2
 
 
