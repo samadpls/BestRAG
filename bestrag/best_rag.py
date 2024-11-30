@@ -90,6 +90,13 @@ class BestRAG:
         text = text.replace('\n', ' ')
         text = re.sub(r'\s{2,}', ' ', text)
         text = re.sub(r'(\d+\.)\s', r'\n\1 ', text)
+        text = re.sub(r'[●■○]', '', text)
+        text = re.sub(r'[""''«»]', '"', text)
+        text = re.sub(r'[–—−]', '-', text)
+        text = re.sub(r'[^\x00-\x7F]+', '', text)
+        text = re.sub(r'[\u200B-\u200D\uFEFF]', '', text)
+        text = re.sub(r'\s+', ' ', text)
+    
         return text.strip()
 
     def _get_dense_embedding(self, text: str):

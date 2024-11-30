@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="bestrag",
-    version="0.2.1",
+    version="0.3.0",
     description="bestrag: Library for storing and searching document embeddings in a Qdrant vector database using hybrid embedding techniques.",
     author="samadpls",
     author_email="abdulsamadsid1@gmail.com",
