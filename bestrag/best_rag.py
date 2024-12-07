@@ -198,8 +198,7 @@ class BestRAG:
                 points=[point]
             )
 
-            print(f"Stored embedding for page {page_num + 1} \
-                of '{pdf_name}' in collection '{self.collection_name}'.")
+            print(f"Stored embedding for page {page_num + 1} of '{pdf_name}' in collection '{self.collection_name}'.")
 
     def delete_pdf_embeddings(self, pdf_name: str):
         """
@@ -224,8 +223,7 @@ class BestRAG:
             )
         )
 
-        print(f"Deleted all embeddings for PDF '{pdf_name}' \
-            from collection '{self.collection_name}'.")
+        print(f"Deleted all embeddings for PDF '{pdf_name}' from collection '{self.collection_name}'.")
 
     def search(self, query: str, limit: int = 10):
         """
