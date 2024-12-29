@@ -1,4 +1,3 @@
-
 <img src="https://github.com/user-attachments/assets/e23d11d5-2d7b-44e2-aa11-59ddcb66bebc" align=left height=180px>
 
 ![Supported python versions](https://img.shields.io/badge/python-3.7%20%7C%203.8%20%7C%203.9%20%7C%203.10%20%7C%203.11-blue)
@@ -6,12 +5,9 @@
 [![License](https://img.shields.io/badge/License-MIT%202.0-blue.svg)](LICENSE)
 [![Run Pytest](https://github.com/samadpls/BestRAG/actions/workflows/pytest.yml/badge.svg?branch=main)](https://github.com/samadpls/BestRAG/actions/workflows/pytest.yml)
 ![GitHub stars](https://img.shields.io/github/stars/samadpls/BestRAG?color=red&label=stars&logoColor=black&style=social)
-![PyPI - Downloads](https://img.shields.io/pypi/dm/bestrag?style=social)
-
-
+![PyPI - Downloads](https://img.shields.io/pypi/dm/bestrag?style=social)  
 
 Introducing **BestRAG**! This Python library leverages a hybrid Retrieval-Augmented Generation (RAG) approach to efficiently store and retrieve embeddings. By combining dense, sparse, and late interaction embeddings, **BestRAG** offers a robust solution for managing large datasets.
-
 
 ## ✨ Features
 
@@ -53,14 +49,18 @@ rag.delete_pdf_embeddings("home/notes.pdf")
 
 > **Note**: Qdrant offers a free tier with 4GB of storage. To generate your API key and endpoint, visit [Qdrant](https://qdrant.tech/).
 
-## 🤝 Contributing
+## 🌐 Try it on Hugging Face Spaces  
 
-Feel free to contribute to **BestRAG**! Whether it’s reporting bugs, suggesting features, or submitting pull requests, your contributions are welcome. 
+You can explore and interact with **BestRAG** directly on Hugging Face Spaces: [BestRAG on Hugging Face](https://huggingface.co/spaces/samadpls/BestRAG)  
 
-## 📝 License
+## 🤝 Contributing  
 
-This project is licensed under the [MIT License](LICENSE).
+Feel free to contribute to **BestRAG**! Whether it’s reporting bugs, suggesting features, or submitting pull requests, your contributions are welcome.  
+
+## 📝 License  
+
+This project is licensed under the [MIT License](LICENSE).  
 
 ---
 
-Created by [samadpls](https://github.com/samadpls) 🎉
+Created by [samadpls](https://github.com/samadpls) 🎉  
