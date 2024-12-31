@@ -49,7 +49,7 @@ rag.delete_pdf_embeddings("home/notes.pdf")
 
 > **Note**: Qdrant offers a free tier with 4GB of storage. To generate your API key and endpoint, visit [Qdrant](https://qdrant.tech/).
 
-## 🌐 Try it on Hugging Face Spaces  
+##  🤗 Try it on Hugging Face Spaces  
 
 You can explore and interact with **BestRAG** directly on Hugging Face Spaces: [BestRAG on Hugging Face](https://huggingface.co/spaces/samadpls/BestRAG)  
 
