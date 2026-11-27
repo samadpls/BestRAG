@@ -3,6 +3,8 @@ from typing import Any, Literal, TypedDict
 
 __version__: str
 
+def read_pdf(path: str | PathLike[str]) -> list[str]: ...
+
 class Hit(TypedDict):
     text: str
     score: float

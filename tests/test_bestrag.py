@@ -10,11 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from bestrag import BestRAG, BestRAGError
+from bestrag import BestRAG, BestRAGError, read_pdf
 
 GRPC = os.environ.get("BESTRAG_TEST_QDRANT", "http://localhost:6334")
 REST = os.environ.get("BESTRAG_TEST_QDRANT_REST", "http://localhost:6333")
 PDF = Path(__file__).parent / "fixtures" / "two-pages.pdf"
+ARABIC_PDF = Path(__file__).parent / "fixtures" / "arabic.pdf"
 
 DOCS = {
     "qdrant": "Qdrant is a vector database written in Rust. It stores dense and sparse vectors.",
@@ -135,6 +136,40 @@ def test_pdf_pages_are_kept(rag):
     assert (hit["source"], hit["page"]) == ("two-pages.pdf", 2)
     assert rag.search("aardvark", limit=1, mode="sparse")[0]["page"] == 1
     rag.delete("two-pages.pdf")
+
+
+def test_arabic_pdf_text_comes_back_in_reading_order(rag):
+    rag.add_pdf(ARABIC_PDF)
+    text = rag.search("الإجازة", limit=1, mode="sparse")[0]["text"]
+    for sentence in [
+        "يحق للموظف الحصول على الإجازة السنوية بعد إكمال سنة كاملة من الخدمة.",
+        "لا يجوز للموظف العمل لدى جهة أخرى أثناء الإجازة.",
+        "تُصرف مكافأة نهاية الخدمة خلال 14 يوماً من تاريخ انتهاء العقد.",
+        "نستخدم Qdrant للبحث في الوثائق.",
+        "The word الإجازة means annual leave.",
+    ]:
+        assert sentence in text
+    rag.delete("arabic.pdf")
+
+
+def test_read_pdf_returns_each_page():
+    pages = read_pdf(PDF)
+    assert len(pages) == 2
+    assert "aardvark" in pages[0] and "zebrafish" in pages[1]
+
+
+def test_arabic_search_ignores_hamza_and_short_vowels(rag):
+    rag.add_pdf(ARABIC_PDF)
+    for query in ["الاجازة", "تصرف مكافاة"]:
+        assert rag.search(query, limit=1, mode="sparse")[0]["source"] == "arabic.pdf"
+    rag.delete("arabic.pdf")
+
+
+def test_long_arabic_text_is_split_to_fit_the_model(rag):
+    # 240 words is one chunk by word count, but far past bge-small's 512 tokens.
+    chunks = rag.add_text(" ".join(["المكافأة السنوية للموظفين"] * 80), "arabic-long")
+    assert chunks >= 3
+    rag.delete("arabic-long")
 
 
 def test_bad_input_raises(rag):

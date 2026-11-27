@@ -15,7 +15,7 @@ BestRAG stores your documents in [Qdrant](https://qdrant.tech/) and searches the
 - **Reranking.** A small cross-encoder reads your question together with each candidate and puts the best one first. You can turn it off or choose another model.
 - **PDFs and plain text.** PDFs are read page by page, and every result keeps its page number. Indexing a name again replaces the old version, so you never get duplicates.
 - **Rust underneath.** You call Python, and Rust does the PDF reading, chunking, embeddings and Qdrant calls. Python's lock is released during this work, so your other threads keep running.
-- **Keyword search in any language.** BM25 keeps Urdu, Arabic and accented text as it is. The default dense model and reranker are English models, and you can choose multilingual ones.
+- **Arabic and other languages.** PDFs are read in true reading order, so Arabic does not come out backwards and ligatures like لا stay whole. BM25 treats spelling variants such as الإجازة and الاجازة as the same word. Chunks are measured with the model's own tokenizer, so no text is cut off silently. See [Languages](#languages).
 
 ## 🚀 Install
 
@@ -60,6 +60,36 @@ rag.add_texts([
 ])
 ```
 
+## Languages
+
+BestRAG keeps text in any script, but its default models are English models. For other languages, choose multilingual ones:
+
+```python
+rag = BestRAG(
+    "http://localhost:6334",
+    "hr-docs",
+    dense_model="intfloat/multilingual-e5-small",  # or "BAAI/bge-m3": stronger, but about 2 GB
+    reranker="jinaai/jina-reranker-v2-base-multilingual",
+)
+```
+
+Arabic PDFs are hard for most text extractors. This is what BestRAG does about the common problems:
+
+| Problem | What BestRAG does |
+| --- | --- |
+| Many PDFs store Arabic in visual order, so extractors return it backwards. | It reads each glyph's position and rebuilds every line in reading order. |
+| The lam-alef ligature (لا, لإ) gets swapped or split. | It moves whole glyphs, not single letters, so the ligature keeps its order. |
+| Punctuation ends up at the wrong end of the sentence. | Full stops and commas follow the line's direction. |
+| A search misses a word written with or without hamza or short vowels. | BM25 normalises them the way Lucene's Arabic analyzer does, so الإجازة matches الاجازة. |
+| Arabic needs more tokens per word, so fixed-size chunks get cut off. | It checks every chunk with the model's tokenizer and splits it when it is too long. |
+
+The tests include an Arabic PDF that checks each of these cases.
+
+Two things BestRAG cannot fix:
+
+- **No ToUnicode map:** some PDFs have fonts with no map from glyphs to letters. They hold only shapes, so the pages need OCR before indexing.
+- **Questions with no answer:** BestRAG ranks results, but it does not decide whether a question has an answer at all. A score cutoff for that has to be tuned for each language and model.
+
 <details>
 <summary><b>All options</b></summary>
 
@@ -87,26 +117,26 @@ Errors from BestRAG raise `bestrag.BestRAGError`.
 
 </details>
 
-## 📊 How well it works
+## How well it works
 
 We measured BestRAG on [BEIR SciFact](https://huggingface.co/datasets/BeIR/scifact): 5,183 scientific abstracts and 300 test questions, where experts marked the abstracts that answer each question. Each search asked for 10 results.
 
 | Setup | nDCG@10 | Recall@10 | Median search time |
 | --- | --- | --- | --- |
-| BM25 only | 0.655 | 0.764 | 0.3 ms |
+| BM25 only | 0.655 | 0.764 | 0.2 ms |
 | Dense only | 0.715 | 0.821 | 8 ms |
-| Hybrid (dense + BM25, RRF) | 0.731 | 0.859 | 7 ms |
-| **Hybrid + reranker (the default)** | **0.754** | **0.862** | 1.0 s |
+| Hybrid (dense + BM25, RRF) | 0.734 | 0.860 | 7 ms |
+| **Hybrid + reranker (the default)** | **0.754** | **0.864** | 0.8 s |
 
-- **Hybrid search finds more of the right abstracts** than either search alone. Recall@10 rises from 0.821 with dense only to 0.859.
-- **The reranker puts the right abstracts higher.** nDCG@10 rises from 0.731 to 0.754. But it makes each search about one second slower on a laptop CPU. If speed matters more than these points, pass `reranker=None`.
+- **Hybrid search finds more of the right abstracts** than either search alone. Recall@10 rises from 0.821 with dense only to 0.860.
+- **The reranker puts the right abstracts higher.** nDCG@10 rises from 0.734 to 0.754. But it makes each search about 0.8 seconds slower on a laptop CPU. If speed matters more than these points, pass `reranker=None`.
 - **The dense-only score is a sanity check.** 0.715 is close to the 0.713 that the model's authors report for SciFact on its [model card](https://huggingface.co/BAAI/bge-small-en-v1.5). Dense-only is also what version 0.3 did in practice, because its BM25 vectors were never searched.
-- **Indexing** all 5,183 abstracts (7,084 chunks) took about 6 minutes with `add_texts`.
+- **Indexing** all 5,183 abstracts (7,088 chunks) took about 5 minutes with `add_texts`.
 
 <details>
 <summary><b>How we measured</b></summary>
 
-- **Machine:** MacBook Pro (M3 Pro), CPU only, with Qdrant 1.20.2 running locally.
+- **Machine:** a MacBook Pro, CPU only, with Qdrant 1.20.2 running locally.
 - **Models:** the defaults, `bge-small-en-v1.5` for dense vectors and `jina-reranker-v1-turbo-en` for reranking.
 - **Metrics:** nDCG@10 rewards putting the right abstracts near the top. Recall@10 is the share of right abstracts found in the top 10. When one abstract fills two chunks in the top 10, it counts once.
 - **Search time:** the median time per question, measured from Python.
@@ -117,7 +147,7 @@ We measured BestRAG on [BEIR SciFact](https://huggingface.co/datasets/BeIR/scifa
 <details>
 <summary><b>How it works</b></summary>
 
-**Indexing.** Text is split into chunks of 200 words with a 40-word overlap. A short tail joins the last chunk, so no chunk is tiny. Each chunk gets two vectors:
+**Indexing.** PDF text is rebuilt line by line from glyph positions, so right-to-left scripts come out in reading order. Text is split into chunks of 200 words with a 40-word overlap. A short tail joins the last chunk, so no chunk is tiny. Any chunk that is longer than the model can read is split again. Each chunk gets two vectors:
 
 1. a dense vector from the embedding model, stored as `dense`;
 2. a BM25 vector, stored as `bm25`. Qdrant's IDF modifier adds the inverse document frequency on the server.
@@ -128,11 +158,15 @@ Indexing a name first deletes what was stored under it before, so re-indexing a 
 
 </details>
 
+## 🤗 Try it on Hugging Face Spaces
+
+You can try BestRAG in your browser on [Hugging Face Spaces](https://huggingface.co/spaces/samadpls/BestRAG). Bring your own Qdrant URL and API key.
+
 ## Upgrading from 0.3
 
 Version 0.4 is a rewrite with a new API. It cannot read collections made by 0.3, so please index your documents again. The old pure-Python code is kept at the [`v0.3.3` tag](https://github.com/samadpls/BestRAG/tree/v0.3.3), and it is no longer maintained.
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome. [CONTRIBUTING.md](https://github.com/samadpls/BestRAG/blob/main/CONTRIBUTING.md) explains how to build the project, run the tests and run the evaluation.
 

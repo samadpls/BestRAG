@@ -1,6 +1,6 @@
 //! The Qdrant-backed store: indexing, hybrid search and reranking.
 
-use crate::{bm25, text};
+use crate::{bm25, pdf, text};
 use anyhow::{Context, Result, anyhow, bail};
 use fastembed::{
     AutoDevicePolicy, EmbeddingModel, RerankInitOptions, RerankerModel, TextEmbedding,
@@ -93,13 +93,10 @@ impl BestRag {
     /// does not exist, and loads the models, downloading them on first use.
     pub fn new(url: &str, collection: &str, options: Options) -> Result<Self> {
         let (model, dim) = dense_model(&options.dense_model)?;
-        let reranker: Option<RerankerModel> = options
+        let reranker = options
             .reranker
             .as_deref()
-            .map(|name| {
-                name.parse()
-                    .map_err(|e| anyhow!("unknown reranker {name:?}: {e}"))
-            })
+            .map(reranker_model)
             .transpose()?;
 
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -174,7 +171,7 @@ impl BestRag {
 
     /// Indexes a PDF page by page. `name` defaults to the file name.
     pub fn add_pdf(&self, path: &Path, name: Option<&str>, metadata: Value) -> Result<usize> {
-        let chunks: Vec<text::Chunk> = text::pdf_pages(path)?
+        let chunks: Vec<text::Chunk> = pdf::pages(path)?
             .iter()
             .zip(1..)
             .flat_map(|(page, number)| text::chunk_words(page, Some(number)))
@@ -197,8 +194,12 @@ impl BestRag {
     }
 
     fn store(&self, entries: &[(&str, Vec<text::Chunk>, &Value)]) -> Result<usize> {
+        let entries = entries
+            .iter()
+            .map(|(name, chunks, metadata)| Ok((*name, self.fit_to_model(chunks)?, *metadata)))
+            .collect::<Result<Vec<_>>>()?;
         let mut names = HashSet::new();
-        for (name, _, metadata) in entries {
+        for (name, _, metadata) in &entries {
             if !(metadata.is_object() || metadata.is_null()) {
                 bail!("metadata for {name:?} must be a dict (a JSON object)");
             }
@@ -215,7 +216,7 @@ impl BestRag {
             .into_iter();
 
         let mut points = Vec::with_capacity(texts.len());
-        for (source, chunks, metadata) in entries {
+        for (source, chunks, metadata) in &entries {
             for (index, chunk) in chunks.iter().enumerate() {
                 let dense = vectors
                     .next()
@@ -340,6 +341,36 @@ impl BestRag {
         Ok(())
     }
 
+    /// Halves any chunk the dense model would cut off, so no text goes unseen.
+    /// Word counts are only a guess at length: Arabic, for example, needs
+    /// several tokens per word in an English model's vocabulary.
+    fn fit_to_model(&self, chunks: &[text::Chunk]) -> Result<Vec<text::Chunk>> {
+        let model = lock(&self.dense)?;
+        let mut pending: Vec<text::Chunk> = chunks.iter().rev().cloned().collect();
+        let mut fitted = Vec::with_capacity(chunks.len());
+        while let Some(chunk) = pending.pop() {
+            let encoding = model
+                .tokenizer
+                .encode(chunk.text.as_str(), true)
+                .map_err(|e| anyhow!("could not tokenize a chunk: {e}"))?;
+            let words: Vec<&str> = chunk.text.split(' ').collect();
+            if encoding.get_overflowing().is_empty() || words.len() < 2 {
+                fitted.push(chunk);
+                continue;
+            }
+            let (left, right) = words.split_at(words.len() / 2);
+            pending.push(text::Chunk {
+                text: right.join(" "),
+                page: chunk.page,
+            });
+            pending.push(text::Chunk {
+                text: left.join(" "),
+                page: chunk.page,
+            });
+        }
+        Ok(fitted)
+    }
+
     fn embed_query(&self, query: &str) -> Result<Vec<f32>> {
         lock(&self.dense)?
             .embed([query], None)?
@@ -393,25 +424,42 @@ async fn ensure_collection(client: &Qdrant, name: &str, dim: u64) -> Result<()> 
     Ok(())
 }
 
-/// Accepts fastembed's model code ("Xenova/bge-small-en-v1.5"), its enum name,
-/// or the original Hugging Face name ("BAAI/bge-small-en-v1.5"), which only
-/// shares the part after the slash with the ONNX copy fastembed downloads.
-fn dense_model(name: &str) -> Result<(EmbeddingModel, u64)> {
+/// Finds a fastembed model by its code ("Xenova/bge-small-en-v1.5"), its enum
+/// name, or the original Hugging Face name ("BAAI/bge-small-en-v1.5"), which
+/// only shares the part after the slash with the ONNX copy fastembed uses.
+fn find_model<T: Clone>(name: &str, models: &[(String, String, T)]) -> Option<T> {
     let repo = |code: &str| code.rsplit('/').next().unwrap_or(code).to_ascii_lowercase();
-    let models = TextEmbedding::list_supported_models();
     models
         .iter()
-        .find(|info| {
-            info.model_code.eq_ignore_ascii_case(name)
-                || format!("{:?}", info.model).eq_ignore_ascii_case(name)
+        .find(|(code, enum_name, _)| {
+            code.eq_ignore_ascii_case(name) || enum_name.eq_ignore_ascii_case(name)
         })
-        .or_else(|| {
-            models
-                .iter()
-                .find(|info| repo(&info.model_code) == repo(name))
+        .or_else(|| models.iter().find(|(code, _, _)| repo(code) == repo(name)))
+        .map(|(_, _, model)| model.clone())
+}
+
+fn dense_model(name: &str) -> Result<(EmbeddingModel, u64)> {
+    let models: Vec<_> = TextEmbedding::list_supported_models()
+        .into_iter()
+        .map(|i| {
+            (
+                i.model_code,
+                format!("{:?}", i.model),
+                (i.model, i.dim as u64),
+            )
         })
-        .map(|info| (info.model.clone(), info.dim as u64))
+        .collect();
+    find_model(name, &models)
         .ok_or_else(|| anyhow!("unknown dense model {name:?}; pick one fastembed supports"))
+}
+
+fn reranker_model(name: &str) -> Result<RerankerModel> {
+    let models: Vec<_> = TextRerank::list_supported_models()
+        .into_iter()
+        .map(|i| (i.model_code, format!("{:?}", i.model), i.model))
+        .collect();
+    find_model(name, &models)
+        .ok_or_else(|| anyhow!("unknown reranker {name:?}; pick one fastembed supports"))
 }
 
 /// Matches chunks whose `source` is any of `sources`.
@@ -453,4 +501,25 @@ fn lock<T>(mutex: &Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>> {
     mutex
         .lock()
         .map_err(|_| anyhow!("a model panicked earlier; create a new BestRAG"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn models_resolve_from_their_hugging_face_names() {
+        assert_eq!(
+            reranker_model("BAAI/bge-reranker-v2-m3").unwrap(),
+            RerankerModel::BGERerankerV2M3
+        );
+        assert_eq!(
+            reranker_model(DEFAULT_RERANKER).unwrap(),
+            RerankerModel::JINARerankerV1TurboEn
+        );
+        assert_eq!(dense_model(DEFAULT_DENSE_MODEL).unwrap().1, 384);
+        assert_eq!(dense_model("BAAI/bge-m3").unwrap().1, 1024);
+        assert!(dense_model("no/such-model").is_err());
+        assert!(reranker_model("no/such-model").is_err());
+    }
 }

@@ -3,6 +3,8 @@
 //! BM25's term-frequency part and a query vector only marks which terms it has.
 
 use std::collections::HashMap;
+use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::is_combining_mark;
 
 const K1: f32 = 1.2;
 const B: f32 = 0.75;
@@ -10,12 +12,29 @@ const B: f32 = 0.75;
 // fastembed's BM25 uses the same fixed value.
 const AVG_LEN: f32 = 256.0;
 
-/// Lowercased runs of letters and digits, in any script.
+/// Lowercased words in any script. NFKC and Arabic normalisation run first,
+/// so spelling variants of one word share a BM25 term. Combining marks stay
+/// inside their word, so vowel signs do not split Hindi or Urdu words.
 pub fn tokens(text: &str) -> Vec<String> {
-    text.split(|c: char| !c.is_alphanumeric())
+    let normal: String = text.nfkc().filter_map(normalize_arabic).collect();
+    normal
+        .split(|c: char| !(c.is_alphanumeric() || is_combining_mark(c)))
         .filter(|t| !t.is_empty())
         .map(str::to_lowercase)
         .collect()
+}
+
+/// The rules of Lucene's ArabicNormalizer: alef with hamza or madda becomes
+/// a bare alef, alef maqsura becomes yeh, teh marbuta becomes heh, and tatweel
+/// and the short-vowel marks are dropped.
+fn normalize_arabic(c: char) -> Option<char> {
+    match c {
+        '\u{0622}' | '\u{0623}' | '\u{0625}' => Some('\u{0627}'),
+        '\u{0649}' => Some('\u{064A}'),
+        '\u{0629}' => Some('\u{0647}'),
+        '\u{0640}' | '\u{064B}'..='\u{0652}' => None,
+        c => Some(c),
+    }
 }
 
 /// FNV-1a. Stored vectors depend on these ids, so the hash must never change
@@ -63,6 +82,20 @@ mod tests {
             tokens("Hello, WORLD! snake_case x2 کتاب"),
             vec!["hello", "world", "snake", "case", "x2", "کتاب"]
         );
+    }
+
+    #[test]
+    fn arabic_spelling_variants_share_a_term() {
+        assert_eq!(tokens("الإجازة"), tokens("الاجازة"));
+        assert_eq!(tokens("تُصرف"), tokens("تصرف"));
+        assert_eq!(tokens("مدرسة"), tokens("مدرسه"));
+        assert_eq!(tokens("\u{FEFB}"), tokens("لا"));
+    }
+
+    #[test]
+    fn vowel_signs_do_not_split_words() {
+        assert_eq!(tokens("हिन्दी भाषा").len(), 2);
+        assert_eq!(tokens("تُصرف").len(), 1);
     }
 
     #[test]

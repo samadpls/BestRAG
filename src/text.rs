@@ -1,8 +1,5 @@
 //! Turning documents into chunks small enough for the embedding model.
 
-use anyhow::{Context, Result};
-use std::path::Path;
-
 /// One piece of a document, small enough to embed whole.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Chunk {
@@ -16,12 +13,6 @@ pub struct Chunk {
 // leaves room for long words and other languages.
 pub const CHUNK_WORDS: usize = 200;
 pub const OVERLAP_WORDS: usize = 40;
-
-/// The text of each page, in page order.
-pub fn pdf_pages(path: &Path) -> Result<Vec<String>> {
-    pdf_extract::extract_text_by_pages(path)
-        .with_context(|| format!("could not read text from {}", path.display()))
-}
 
 /// Overlapping windows of `CHUNK_WORDS` words. Whitespace is normalised.
 // shortcut: windows are counted in whitespace-separated words, so scripts

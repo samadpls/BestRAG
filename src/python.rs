@@ -169,9 +169,17 @@ impl PyBestRag {
     }
 }
 
+/// The text BestRAG reads from each page of a PDF, in page order. Use it to
+/// check a PDF before indexing it, for example to find pages that need OCR.
+#[pyfunction]
+fn read_pdf(py: Python<'_>, path: PathBuf) -> PyResult<Vec<String>> {
+    py.detach(|| crate::read_pdf(&path)).map_err(to_py)
+}
+
 #[pymodule]
 fn _bestrag(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", crate::VERSION)?;
+    m.add_function(wrap_pyfunction!(read_pdf, m)?)?;
     m.add_class::<PyBestRag>()?;
     m.add("BestRAGError", m.py().get_type::<BestRAGError>())?;
     Ok(())

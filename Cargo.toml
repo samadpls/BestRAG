@@ -30,4 +30,5 @@ qdrant-client = { version = "1.20.0", default-features = false, features = ["ser
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
+unicode-normalization = "0.1.26"
 uuid = { version = "1.29.3", features = ["v4"] }

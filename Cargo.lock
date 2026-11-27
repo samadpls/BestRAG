@@ -161,6 +161,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "unicode-normalization",
  "uuid",
 ]
 

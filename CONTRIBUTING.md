@@ -6,8 +6,9 @@ Thank you for helping. BestRAG is a Rust library with a Python interface on top.
 
 | Path | What it holds |
 | --- | --- |
-| `src/text.rs` | PDF text per page, and splitting text into overlapping chunks |
-| `src/bm25.rs` | BM25 sparse vectors (Qdrant adds the IDF part) |
+| `src/pdf.rs` | PDF text per page in reading order, including right-to-left scripts like Arabic |
+| `src/text.rs` | Splitting text into overlapping chunks |
+| `src/bm25.rs` | BM25 sparse vectors with Unicode and Arabic normalisation (Qdrant adds the IDF part) |
 | `src/store.rs` | The `BestRag` type: collection setup, indexing, hybrid search and reranking |
 | `src/python.rs` | The Python class, built only with the `python` feature |
 | `python/bestrag/` | The Python package and its type stubs |
