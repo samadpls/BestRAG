@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#1b1411; --rust:#e4572e; --cream:#fff4e6; --gold:#ffc94a; --dim:#8f7f74; }
+  * { box-sizing:border-box; margin:0; }
+  html, body { width:100vw; height:100vh; overflow:hidden; }
+  body { background:var(--ink); color:var(--cream); font-family:"Geist",sans-serif; display:grid;
+         grid-template-columns: 52fr 48fr; column-gap:3vw; align-items:center; padding:0 6.5vw; }
+  .kicker { color:var(--gold); font-weight:600; letter-spacing:.16em; text-transform:uppercase; font-size:1.45vw; }
+  h1 { font-family:"Bricolage Grotesque",sans-serif; font-weight:800; font-size:10vw; line-height:.95; letter-spacing:-.04em; margin-top:1.2vw; }
+  h1 span { color:var(--rust); }
+  .line { font-size:2.5vw; font-weight:500; margin-top:2vw; color:var(--dim); }
+  .line b { color:var(--cream); font-weight:600; }
+  svg { width:100%; height:auto; display:block; }
+</style></head><body>
+<div>
+  <div class="kicker">Hybrid search for RAG</div>
+  <h1>Best<span>RAG</span></h1>
+  <div class="line"><b>Rust</b> inside. <b>Python</b> outside.</div>
+</div>
+<svg viewBox="0 0 640 520" aria-hidden="true">
+  <path d="M30 120 C 190 120, 250 260, 380 260" fill="none" stroke="#fff4e6" stroke-width="30" stroke-linecap="round"/>
+  <path d="M30 400 C 190 400, 250 260, 380 260" fill="none" stroke="#fff4e6" stroke-width="30" stroke-linecap="round" stroke-dasharray="0 46"/>
+  <circle cx="404" cy="260" r="40" fill="#e4572e"/>
+  <circle cx="404" cy="260" r="14" fill="#ffc94a"/>
+  <rect x="478" y="168" width="150" height="40" rx="8" fill="#ffc94a"/>
+  <rect x="478" y="240" width="118" height="40" rx="8" fill="#5a4a40"/>
+  <rect x="478" y="312" width="86" height="40" rx="8" fill="#3a2f29"/>
+</svg>
+</body></html>

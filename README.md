@@ -1,17 +1,13 @@
-<img src="https://github.com/user-attachments/assets/e23d11d5-2d7b-44e2-aa11-59ddcb66bebc" align="left" height="170px" alt="BestRAG logo">
-
 # BestRAG
 
+![BestRAG: hybrid search for RAG. Rust inside, Python outside.](https://raw.githubusercontent.com/samadpls/BestRAG/main/assets/hero.png)
+
 [![PyPI](https://img.shields.io/pypi/v/bestrag)](https://pypi.org/project/bestrag/)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/samadpls/BestRAG/blob/main/LICENSE)
 [![Test](https://github.com/samadpls/BestRAG/actions/workflows/test.yml/badge.svg)](https://github.com/samadpls/BestRAG/actions/workflows/test.yml)
 
-**Hybrid search for RAG. Written in Rust, used from Python.**
-
-BestRAG stores your documents in [Qdrant](https://qdrant.tech/) and searches them in two ways at once: by meaning (dense vectors) and by exact words (BM25). It merges the two result lists and then reranks the best results with a cross-encoder.
-
-<br clear="left">
+BestRAG stores your documents in [Qdrant](https://qdrant.tech/) and searches them in two ways at once: by meaning (dense vectors) and by exact words (BM25). It merges the two result lists and then reranks the best results with a cross-encoder. All of this runs in Rust, and you use it from Python.
 
 ## ✨ What it does
 
@@ -95,9 +91,17 @@ Errors from BestRAG raise `bestrag.BestRAGError`.
 
 We measured BestRAG on [BEIR SciFact](https://huggingface.co/datasets/BeIR/scifact): 5,183 scientific abstracts and 300 test questions, where experts marked the abstracts that answer each question. Each search asked for 10 results.
 
-{{RESULTS_TABLE}}
+| Setup | nDCG@10 | Recall@10 | Median search time |
+| --- | --- | --- | --- |
+| BM25 only | 0.655 | 0.764 | 0.3 ms |
+| Dense only | 0.715 | 0.821 | 8 ms |
+| Hybrid (dense + BM25, RRF) | 0.731 | 0.859 | 7 ms |
+| **Hybrid + reranker (the default)** | **0.754** | **0.862** | 1.0 s |
 
-{{RESULTS_TEXT}}
+- **Hybrid search finds more of the right abstracts** than either search alone. Recall@10 rises from 0.821 with dense only to 0.859.
+- **The reranker puts the right abstracts higher.** nDCG@10 rises from 0.731 to 0.754. But it makes each search about one second slower on a laptop CPU. If speed matters more than these points, pass `reranker=None`.
+- **The dense-only score is a sanity check.** 0.715 is close to the 0.713 that the model's authors report for SciFact on its [model card](https://huggingface.co/BAAI/bge-small-en-v1.5). Dense-only is also what version 0.3 did in practice, because its BM25 vectors were never searched.
+- **Indexing** all 5,183 abstracts (7,084 chunks) took about 6 minutes with `add_texts`.
 
 <details>
 <summary><b>How we measured</b></summary>
@@ -106,7 +110,7 @@ We measured BestRAG on [BEIR SciFact](https://huggingface.co/datasets/BeIR/scifa
 - **Models:** the defaults, `bge-small-en-v1.5` for dense vectors and `jina-reranker-v1-turbo-en` for reranking.
 - **Metrics:** nDCG@10 rewards putting the right abstracts near the top. Recall@10 is the share of right abstracts found in the top 10. When one abstract fills two chunks in the top 10, it counts once.
 - **Search time:** the median time per question, measured from Python.
-- **Reproduce:** run `eval/scifact.py`, as described in [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Reproduce:** run `eval/scifact.py`, as described in [CONTRIBUTING.md](https://github.com/samadpls/BestRAG/blob/main/CONTRIBUTING.md).
 
 </details>
 
@@ -126,12 +130,12 @@ Indexing a name first deletes what was stored under it before, so re-indexing a 
 
 ## Upgrading from 0.3
 
-Version 0.4 is a rewrite with a new API. It cannot read collections made by 0.3, so please index your documents again.
+Version 0.4 is a rewrite with a new API. It cannot read collections made by 0.3, so please index your documents again. The old pure-Python code is kept at the [`v0.3.3` tag](https://github.com/samadpls/BestRAG/tree/v0.3.3), and it is no longer maintained.
 
 ## 🤝 Contributing
 
-Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to build the project, run the tests and run the evaluation.
+Contributions are welcome. [CONTRIBUTING.md](https://github.com/samadpls/BestRAG/blob/main/CONTRIBUTING.md) explains how to build the project, run the tests and run the evaluation.
 
 ## License
 
-[MIT](LICENSE). Made by [Abdul Samad](https://samadpls.com).
+[MIT](https://github.com/samadpls/BestRAG/blob/main/LICENSE). Made by [Abdul Samad](https://samadpls.com).
