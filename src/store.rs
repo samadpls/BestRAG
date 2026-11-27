@@ -22,9 +22,35 @@ pub const DEFAULT_DENSE_MODEL: &str = "BAAI/bge-small-en-v1.5";
 pub const RECOMMENDED_RERANKER: &str = "jinaai/jina-reranker-v1-turbo-en";
 
 const EMBED_BATCH: usize = 32;
+// Embedding functions get at most this many texts per call: Cohere takes up to
+// 96 texts per request, and Gemini up to 100.
+const FUNCTION_BATCH: usize = 64;
 // The reranker reorders a wider pool than it returns, so good chunks that the
 // first stage ranked low still get a chance.
 const MIN_RERANK_POOL: usize = 30;
+
+/// Your own embedding function, usually a call to an embedding API. It gets up
+/// to 64 texts and `query`, which is true for a search question and false for
+/// documents, and returns one vector per text.
+pub type EmbedFn = Box<dyn Fn(&[&str], bool) -> Result<Vec<Vec<f32>>> + Send + Sync>;
+/// Your own reranker: it gets the question and the candidate texts, and
+/// returns one score per text. Higher is better.
+pub type RerankFn = Box<dyn Fn(&str, &[&str]) -> Result<Vec<f32>> + Send + Sync>;
+
+pub enum DenseModel {
+    /// A fastembed model code, for example `BAAI/bge-small-en-v1.5`. It is
+    /// downloaded on first use.
+    Name(String),
+    /// Nothing is downloaded or loaded.
+    Function(EmbedFn),
+}
+
+pub enum Reranker {
+    /// A fastembed reranker code, such as [`RECOMMENDED_RERANKER`].
+    Name(String),
+    /// Nothing is downloaded or loaded.
+    Function(RerankFn),
+}
 
 pub struct Options {
     /// "qdrant" or "postgres". Normally left out: the URL scheme decides, and
@@ -33,11 +59,9 @@ pub struct Options {
     /// Qdrant's API key. Postgres takes its password from the URL or
     /// `$PGPASSWORD`.
     pub api_key: Option<String>,
-    /// A fastembed model code, for example `BAAI/bge-small-en-v1.5`.
-    pub dense_model: String,
-    /// A fastembed reranker code, such as [`RECOMMENDED_RERANKER`], or `None`
-    /// (the default) to keep the fused order.
-    pub reranker: Option<String>,
+    pub dense_model: DenseModel,
+    /// `None` (the default) keeps the fused order.
+    pub reranker: Option<Reranker>,
     /// Where models are downloaded. Defaults to `$BESTRAG_CACHE_DIR`, then the
     /// user cache folder. fastembed lets `$HF_HOME` override this when it is set.
     pub cache_dir: Option<PathBuf>,
@@ -48,7 +72,7 @@ impl Default for Options {
         Self {
             backend: None,
             api_key: None,
-            dense_model: DEFAULT_DENSE_MODEL.into(),
+            dense_model: DenseModel::Name(DEFAULT_DENSE_MODEL.into()),
             reranker: None,
             cache_dir: None,
         }
@@ -85,8 +109,20 @@ pub struct Hit {
 pub struct BestRag {
     runtime: Runtime,
     backend: Backend,
-    dense: Mutex<TextEmbedding>,
-    reranker: Option<Mutex<TextRerank>>,
+    dense: Dense,
+    reranker: Option<Rerank>,
+}
+
+// The local models are boxed: they are far larger than a function.
+enum Dense {
+    Local(Box<Mutex<TextEmbedding>>),
+    /// The function and the vector size it makes.
+    Function(EmbedFn, usize),
+}
+
+enum Rerank {
+    Local(Box<Mutex<TextRerank>>),
+    Function(RerankFn),
 }
 
 impl BestRag {
@@ -94,18 +130,23 @@ impl BestRag {
     /// Postgres with pgvector), creates the collection if it does not exist,
     /// and loads the models, downloading them on first use.
     pub fn new(url: &str, collection: &str, options: Options) -> Result<Self> {
-        let (model, dim) = dense_model(&options.dense_model)?;
-        let reranker = options
-            .reranker
-            .as_deref()
-            .map(reranker_model)
-            .transpose()?;
         let kind = backend::kind(url, options.backend.as_deref())?;
+        let dim = match &options.dense_model {
+            DenseModel::Name(name) => dense_model(name)?.1,
+            // One call with a short text tells the vector size, so the
+            // collection's size check works for functions too.
+            DenseModel::Function(embed) => {
+                call_embed(embed, &["dimension check"], false, None)?[0].len() as u64
+            }
+        };
+        if let Some(Reranker::Name(name)) = &options.reranker {
+            reranker_model(name)?;
+        }
 
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()?;
-        let backend = match kind {
+        let mut backend = match kind {
             Kind::Qdrant => {
                 Backend::Qdrant(QdrantStore::connect(url, options.api_key, collection)?)
             }
@@ -134,28 +175,36 @@ impl BestRag {
         // ort's default device policy hands the model to CoreML on macOS, which
         // rebuilds it for every new input shape: one batch of 16 chunks took
         // 1.9 s and 5.5 GB that way, and 0.4 s and 0.37 GB on the CPU.
-        let dense = TextEmbedding::try_new(
-            TextInitOptions::new(model)
-                .with_cache_dir(cache.clone())
-                .with_auto_device(AutoDevicePolicy::PreferCPU)
-                .with_show_download_progress(false),
-        )?;
-        let reranker = reranker
-            .map(|model| {
-                TextRerank::try_new(
-                    RerankInitOptions::new(model)
+        let dense = match options.dense_model {
+            DenseModel::Name(name) => {
+                let model = TextEmbedding::try_new(
+                    TextInitOptions::new(dense_model(&name)?.0)
                         .with_cache_dir(cache.clone())
                         .with_auto_device(AutoDevicePolicy::PreferCPU)
                         .with_show_download_progress(false),
-                )
-                .map(Mutex::new)
-            })
-            .transpose()?;
+                )?;
+                Dense::Local(Box::new(Mutex::new(model)))
+            }
+            DenseModel::Function(embed) => Dense::Function(embed, dim as usize),
+        };
+        let reranker = match options.reranker {
+            None => None,
+            Some(Reranker::Name(name)) => {
+                let model = TextRerank::try_new(
+                    RerankInitOptions::new(reranker_model(&name)?)
+                        .with_cache_dir(cache)
+                        .with_auto_device(AutoDevicePolicy::PreferCPU)
+                        .with_show_download_progress(false),
+                )?;
+                Some(Rerank::Local(Box::new(Mutex::new(model))))
+            }
+            Some(Reranker::Function(rerank)) => Some(Rerank::Function(rerank)),
+        };
 
         Ok(Self {
             runtime,
             backend,
-            dense: Mutex::new(dense),
+            dense,
             reranker,
         })
     }
@@ -228,9 +277,7 @@ impl BestRag {
             .iter()
             .flat_map(|(_, chunks, _)| chunks.iter().map(|c| c.text.as_str()))
             .collect();
-        let mut vectors = lock(&self.dense)?
-            .embed(&texts, Some(EMBED_BATCH))?
-            .into_iter();
+        let mut vectors = self.embed(&texts, false)?.into_iter();
 
         let mut records = Vec::with_capacity(texts.len());
         for (source, chunks, metadata) in &entries {
@@ -286,12 +333,23 @@ impl BestRag {
             && !hits.is_empty()
         {
             let texts: Vec<&str> = hits.iter().map(|h| h.text.as_str()).collect();
-            let ranked = lock(reranker)?.rerank(query, texts, false, None)?;
+            let ranked: Vec<(usize, f32)> = match reranker {
+                Rerank::Local(model) => lock(model)?
+                    .rerank(query, &texts, false, None)?
+                    .into_iter()
+                    .map(|r| (r.index, r.score))
+                    .collect(),
+                Rerank::Function(rerank) => {
+                    let scores = rerank(query, &texts)?;
+                    check_scores(&scores, texts.len())?;
+                    scores.into_iter().enumerate().collect()
+                }
+            };
             let mut reranked: Vec<Hit> = ranked
                 .into_iter()
-                .map(|r| Hit {
-                    score: r.score,
-                    ..hits[r.index].clone()
+                .map(|(index, score)| Hit {
+                    score,
+                    ..hits[index].clone()
                 })
                 .collect();
             reranked.sort_by(|a, b| b.score.total_cmp(&a.score));
@@ -321,7 +379,15 @@ impl BestRag {
     /// Word counts are only a guess at length: Arabic, for example, needs
     /// several tokens per word in an English model's vocabulary.
     fn fit_to_model(&self, chunks: &[text::Chunk]) -> Result<Vec<text::Chunk>> {
-        let model = lock(&self.dense)?;
+        // shortcut: chunks for an embedding function are not checked, because
+        // there is no tokenizer for the provider's model. 240 words fit the
+        // hosted models we know (512 tokens or more), but a long chunk in a
+        // script that needs many tokens per word could be cut off; check
+        // against the provider's token counts if that matters.
+        let Dense::Local(model) = &self.dense else {
+            return Ok(chunks.to_vec());
+        };
+        let model = lock(model)?;
         let mut pending: Vec<text::Chunk> = chunks.iter().rev().cloned().collect();
         let mut fitted = Vec::with_capacity(chunks.len());
         while let Some(chunk) = pending.pop() {
@@ -348,11 +414,75 @@ impl BestRag {
     }
 
     fn embed_query(&self, query: &str) -> Result<Vec<f32>> {
-        lock(&self.dense)?
-            .embed([query], None)?
+        self.embed(&[query], true)?
             .pop()
             .context("the dense model returned no vector")
     }
+
+    fn embed(&self, texts: &[&str], query: bool) -> Result<Vec<Vec<f32>>> {
+        match &self.dense {
+            Dense::Local(model) => Ok(lock(model)?.embed(texts, Some(EMBED_BATCH))?),
+            Dense::Function(embed, dim) => call_embed(embed, texts, query, Some(*dim)),
+        }
+    }
+}
+
+/// Calls an embedding function in batches, and checks its output, which
+/// usually comes from a remote API. `dim` is `None` only for the first call.
+fn call_embed(
+    embed: &EmbedFn,
+    texts: &[&str],
+    query: bool,
+    dim: Option<usize>,
+) -> Result<Vec<Vec<f32>>> {
+    let mut vectors = Vec::with_capacity(texts.len());
+    for batch in texts.chunks(FUNCTION_BATCH) {
+        let output = embed(batch, query)?;
+        check_vectors(&output, batch.len(), dim)?;
+        vectors.extend(output);
+    }
+    Ok(vectors)
+}
+
+fn check_vectors(vectors: &[Vec<f32>], texts: usize, dim: Option<usize>) -> Result<()> {
+    if vectors.len() != texts {
+        bail!(
+            "the embedding function must return one vector per text, but it got {texts} \
+             and returned {}",
+            vectors.len()
+        );
+    }
+    let dim = dim.or(vectors.first().map(Vec::len)).unwrap_or(0);
+    for vector in vectors {
+        if vector.is_empty() {
+            bail!("the embedding function returned an empty vector");
+        }
+        if vector.len() != dim {
+            bail!(
+                "the embedding function returned a vector of {} numbers, but its vectors \
+                 have {dim}; every vector must have the same size",
+                vector.len()
+            );
+        }
+        if !vector.iter().all(|x| x.is_finite()) {
+            bail!("the embedding function returned a vector with NaN or infinite numbers");
+        }
+    }
+    Ok(())
+}
+
+fn check_scores(scores: &[f32], texts: usize) -> Result<()> {
+    if scores.len() != texts {
+        bail!(
+            "the reranker function must return one score per text, but it got {texts} \
+             and returned {}",
+            scores.len()
+        );
+    }
+    if !scores.iter().all(|x| x.is_finite()) {
+        bail!("the reranker function returned a NaN or infinite score");
+    }
+    Ok(())
 }
 
 /// Finds a fastembed model by its code ("Xenova/bge-small-en-v1.5"), its enum
@@ -424,5 +554,43 @@ mod tests {
         assert_eq!(dense_model("BAAI/bge-m3").unwrap().1, 1024);
         assert!(dense_model("no/such-model").is_err());
         assert!(reranker_model("no/such-model").is_err());
+    }
+
+    #[test]
+    fn embedding_functions_get_batches_of_at_most_64_texts() {
+        let calls = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let seen = calls.clone();
+        let embed: EmbedFn = Box::new(move |texts, query| {
+            seen.lock().unwrap().push((texts.len(), query));
+            Ok(vec![vec![0.5; 3]; texts.len()])
+        });
+        let texts = vec!["a"; 130];
+        assert_eq!(
+            call_embed(&embed, &texts, true, Some(3)).unwrap().len(),
+            130
+        );
+        assert_eq!(*calls.lock().unwrap(), [(64, true), (64, true), (2, true)]);
+    }
+
+    #[test]
+    fn bad_function_output_is_refused() {
+        let err =
+            |vectors: &[Vec<f32>], dim| check_vectors(vectors, 2, dim).unwrap_err().to_string();
+        assert!(err(&[vec![1.0]], None).contains("one vector per text"));
+        assert!(err(&[vec![], vec![]], None).contains("empty vector"));
+        assert!(err(&[vec![1.0], vec![1.0, 2.0]], None).contains("same size"));
+        assert!(err(&[vec![1.0], vec![1.0]], Some(2)).contains("same size"));
+        assert!(err(&[vec![1.0], vec![f32::NAN]], None).contains("NaN"));
+        assert!(err(&[vec![1.0], vec![f32::INFINITY]], None).contains("infinite"));
+        assert!(check_vectors(&[vec![1.0, 0.0], vec![0.0, 1.0]], 2, Some(2)).is_ok());
+
+        assert!(
+            check_scores(&[1.0], 2)
+                .unwrap_err()
+                .to_string()
+                .contains("one score per text")
+        );
+        assert!(check_scores(&[1.0, f32::NAN], 2).is_err());
+        assert!(check_scores(&[-3.5, 0.0], 2).is_ok());
     }
 }

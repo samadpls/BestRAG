@@ -93,7 +93,7 @@ pub enum Backend {
 }
 
 impl Backend {
-    pub async fn ensure(&self, dim: u64) -> Result<()> {
+    pub async fn ensure(&mut self, dim: u64) -> Result<()> {
         match self {
             Backend::Qdrant(store) => store.ensure(dim).await,
             Backend::Postgres(store) => store.ensure(dim).await,

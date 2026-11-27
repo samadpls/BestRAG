@@ -71,6 +71,7 @@ plugins:
           - databases.md: Postgres with pgvector and Qdrant, hosted databases, TLS and passwords
           - indexing.md: Add, replace and delete documents, metadata, chunking and languages
           - search.md: Search modes, the result dict, the reranker and choosing models
+          - embedding-providers.md: Your own embedding and reranker functions, with recipes for OpenAI, Azure OpenAI, Gemini, Cohere, Voyage, Mistral, Amazon Bedrock and Ollama, and how to run with no model downloads
         Reference:
           - api.md: Every class, method and argument, with errors and examples
           - benchmarks.md: Search quality and speed on BEIR SciFact, and how to rerun them
@@ -105,6 +106,7 @@ nav:
       - Databases: databases.md
       - Indexing: indexing.md
       - Search: search.md
+      - Embedding providers: embedding-providers.md
   - Reference:
       - API reference: api.md
       - Benchmarks: benchmarks.md

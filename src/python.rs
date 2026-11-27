@@ -1,6 +1,10 @@
-use crate::{BestRag, DEFAULT_DENSE_MODEL, Document, Hit, Mode, Options};
+use crate::{
+    BestRag, DEFAULT_DENSE_MODEL, DenseModel, Document, EmbedFn, Hit, Mode, Options, RerankFn,
+    Reranker,
+};
+use anyhow::Context;
 use pyo3::create_exception;
-use pyo3::exceptions::{PyException, PyValueError};
+use pyo3::exceptions::{PyException, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pythonize::{depythonize, pythonize};
 use serde_json::{Value, json};
@@ -9,7 +13,86 @@ use std::path::PathBuf;
 create_exception!(bestrag, BestRAGError, PyException);
 
 fn to_py(err: anyhow::Error) -> PyErr {
-    BestRAGError::new_err(format!("{err:#}"))
+    let error = BestRAGError::new_err(format!("{err:#}"));
+    // An exception from the user's own function stays as __cause__, so callers
+    // can still catch, for example, a provider's RateLimitError.
+    let Some(cause) = err.downcast_ref::<PyErr>() else {
+        return error;
+    };
+    Python::attach(|py| {
+        // Ctrl+C (KeyboardInterrupt) and SystemExit must still stop the program.
+        if !cause.is_instance_of::<PyException>(py) {
+            return cause.clone_ref(py);
+        }
+        error.set_cause(py, Some(cause.clone_ref(py)));
+        error
+    })
+}
+
+/// `dense_model` or `reranker`: a fastembed model name, or the user's function.
+#[derive(FromPyObject)]
+enum ModelArg {
+    Name(String),
+    Function(Py<PyAny>),
+}
+
+/// Checks that a model argument that is not a name can be called, and adds
+/// its name to `shown`, for `repr`.
+fn callable(
+    py: Python<'_>,
+    function: Py<PyAny>,
+    arg: &str,
+    shown: &mut String,
+) -> PyResult<Py<PyAny>> {
+    let bound = function.bind(py);
+    if !bound.is_callable() {
+        return Err(PyTypeError::new_err(format!(
+            "{arg} must be a model name or a function"
+        )));
+    }
+    // Only the name: the repr of a callable can show a secret, such as the API
+    // key in a functools.partial.
+    let name = match bound.getattr("__qualname__") {
+        Ok(name) => name.to_string(),
+        Err(_) => bound.get_type().qualname()?.to_string(),
+    };
+    shown.push_str(&format!(", {arg}={name}"));
+    Ok(function)
+}
+
+/// Wraps a Python `embed(texts, query)`. It runs with the GIL held, while the
+/// work around it keeps the GIL released.
+fn embed_fn(function: Py<PyAny>) -> EmbedFn {
+    Box::new(move |texts, query| {
+        Python::attach(|py| {
+            let output = function
+                .bind(py)
+                .call1((texts, query))
+                .context("the embedding function raised an error")?;
+            output
+                .try_iter()
+                .and_then(|rows| rows.map(|row| floats(&row?)).collect())
+                .context("the embedding function must return one list of numbers per text")
+        })
+    })
+}
+
+/// Wraps a Python `rerank(query, texts)`, like `embed_fn`.
+fn rerank_fn(function: Py<PyAny>) -> RerankFn {
+    Box::new(move |query, texts| {
+        Python::attach(|py| {
+            let output = function
+                .bind(py)
+                .call1((query, texts))
+                .context("the reranker function raised an error")?;
+            floats(&output).context("the reranker function must return one number per text")
+        })
+    })
+}
+
+/// Any iterable of numbers, such as a list or a NumPy array.
+fn floats(values: &Bound<'_, PyAny>) -> PyResult<Vec<f32>> {
+    values.try_iter()?.map(|value| value?.extract()).collect()
 }
 
 fn to_json(metadata: Option<&Bound<'_, PyAny>>) -> PyResult<Value> {
@@ -35,15 +118,27 @@ fn hit_to_json(hit: Hit) -> Value {
 /// `url` picks the database: `https://...:6334` or `http://...:6334` for
 /// Qdrant's gRPC port, `postgresql://user:password@host/db` for Postgres.
 /// Pass `backend="qdrant"` or `backend="postgres"` only to be explicit; it must
-/// agree with the URL. Models download into `cache_dir` (default:
-/// `$BESTRAG_CACHE_DIR`, then the user cache folder), unless `$HF_HOME` is set.
-/// Reranking is off by default; pass a reranker name, such as
-/// "jinaai/jina-reranker-v1-turbo-en", to turn it on.
+/// agree with the URL.
+///
+/// `dense_model` is a fastembed model name, or your own function
+/// `embed(texts, query)` that returns one vector per text, for example from an
+/// embedding API. `query` is True for search questions and False for
+/// documents. With a function, nothing is downloaded.
+///
+/// Reranking is off by default. Pass a reranker name, such as
+/// "jinaai/jina-reranker-v1-turbo-en", or your own function
+/// `rerank(query, texts)` that returns one score per text, higher is better.
+///
+/// Models download into `cache_dir` (default: `$BESTRAG_CACHE_DIR`, then the
+/// user cache folder), unless `$HF_HOME` is set.
 #[pyclass(name = "BestRAG", module = "bestrag", frozen)]
 struct PyBestRag {
     inner: BestRag,
     url: String,
     collection: String,
+    /// `, dense_model=<name>` and `, reranker=<name>` for arguments that are
+    /// functions, for `repr`.
+    functions: String,
 }
 
 #[pymethods]
@@ -57,7 +152,7 @@ impl PyBestRag {
         *,
         backend = None,
         api_key = None,
-        dense_model = DEFAULT_DENSE_MODEL.to_string(),
+        dense_model = ModelArg::Name(DEFAULT_DENSE_MODEL.to_string()),
         reranker = None,
         cache_dir = None,
     ))]
@@ -67,10 +162,27 @@ impl PyBestRag {
         collection: String,
         backend: Option<String>,
         api_key: Option<String>,
-        dense_model: String,
-        reranker: Option<String>,
+        dense_model: ModelArg,
+        reranker: Option<ModelArg>,
         cache_dir: Option<PathBuf>,
     ) -> PyResult<Self> {
+        let mut functions = String::new();
+        let dense_model = match dense_model {
+            ModelArg::Name(name) => DenseModel::Name(name),
+            ModelArg::Function(f) => {
+                DenseModel::Function(embed_fn(callable(py, f, "dense_model", &mut functions)?))
+            }
+        };
+        let reranker = match reranker {
+            None => None,
+            Some(ModelArg::Name(name)) => Some(Reranker::Name(name)),
+            Some(ModelArg::Function(f)) => Some(Reranker::Function(rerank_fn(callable(
+                py,
+                f,
+                "reranker",
+                &mut functions,
+            )?))),
+        };
         let options = Options {
             backend,
             api_key,
@@ -85,6 +197,7 @@ impl PyBestRag {
             inner,
             url: crate::backend::redact(&url),
             collection,
+            functions,
         })
     }
 
@@ -175,12 +288,13 @@ impl PyBestRag {
             .map_err(to_py)
     }
 
-    // Secrets are left out on purpose: the API key is never shown, and the
-    // URL is stored without its password, because reprs end up in logs.
+    // Secrets are left out on purpose: the API key is never shown, the URL is
+    // stored without its password, and functions only by name, because reprs
+    // end up in logs.
     fn __repr__(&self) -> String {
         format!(
-            "BestRAG(url={:?}, collection={:?})",
-            self.url, self.collection
+            "BestRAG(url={:?}, collection={:?}{})",
+            self.url, self.collection, self.functions
         )
     }
 }

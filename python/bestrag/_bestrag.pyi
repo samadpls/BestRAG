@@ -1,3 +1,4 @@
+from collections.abc import Callable, Sequence
 from os import PathLike
 from typing import Any, Literal, TypedDict
 
@@ -27,8 +28,8 @@ class BestRAG:
         *,
         backend: Literal["qdrant", "postgres"] | None = None,
         api_key: str | None = None,
-        dense_model: str = "BAAI/bge-small-en-v1.5",
-        reranker: str | None = None,
+        dense_model: str | Callable[[list[str], bool], Sequence[Sequence[float]]] = "BAAI/bge-small-en-v1.5",
+        reranker: str | Callable[[str, list[str]], Sequence[float]] | None = None,
         cache_dir: str | PathLike[str] | None = None,
     ) -> None: ...
     def add_pdf(

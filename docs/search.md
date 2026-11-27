@@ -21,9 +21,9 @@ rag.search("XJ-9042", mode="sparse")
 rag.search("a famous mosque in Pakistan", mode="dense")
 ```
 
-Hybrid search merges the two lists with reciprocal rank fusion (RRF). Each list gives a chunk `1 / (position + 2)` points, with positions counted from 0, and the chunks with the most points come first. So a chunk near the top of both lists beats a chunk that only one search found. On Qdrant, Qdrant merges the lists itself. On Postgres, BestRAG runs both searches in SQL and merges them with the same formula.
+Hybrid search merges the two lists with reciprocal rank fusion (RRF). Each list gives a chunk `1 / (position + 2)` points, with positions counted from 0. Chunks with the most points come first. A chunk near the top of both lists ranks above a chunk found by only one search. Qdrant merges the lists itself. On Postgres, BestRAG runs both searches in SQL and merges them with the same formula.
 
-A few edge cases:
+Search also handles these cases:
 
 - A question with no letters or digits has no words for BM25. In hybrid mode, BestRAG then runs the dense search alone. In sparse mode, it returns an empty list.
 - `limit=0` returns an empty list.
@@ -48,9 +48,9 @@ The score means something different in each mode:
 - In `"sparse"` mode, it is the BM25 score.
 - With a reranker, it is the reranker's score.
 
-So compare scores only within one search. BestRAG ranks results, but it does not decide whether a question has an answer at all. A score cutoff for that has to be tuned for each language and model.
+Compare scores only within one search. BestRAG ranks results, but it does not decide whether the documents answer the question. To use a score cutoff for that, tune it for each language and model.
 
-Hits are chunks, not whole documents, so one long document can appear more than once. To list each document once, keep its first hit:
+Each hit is a chunk, so a long document can appear more than once. To list each document once, keep its first hit:
 
 ```python
 seen = set()
@@ -64,23 +64,22 @@ for hit in rag.search("annual leave", limit=10):
 
 A reranker is a cross-encoder. It reads the question together with each candidate chunk and scores how well the chunk answers it. This is slower than a vector search, but it often puts the right chunk higher.
 
-The reranker is off by default. To turn it on, name a reranker when you create `BestRAG`:
+The reranker is off by default. To turn it on, name a reranker when you create `BestRAG`, or pass your own function:
 
 ```python
-rag = BestRAG(
-    "http://localhost:6334",
-    "my-docs",
-    reranker="jinaai/jina-reranker-v1-turbo-en",
-)
+# Free and local: a small reranker on your machine, downloaded once (about 150 MB).
+rag = BestRAG("http://localhost:6334", "my-docs", reranker="jinaai/jina-reranker-v1-turbo-en")
+# To use a provider such as Cohere Rerank, comment out the line above and uncomment this (see Embedding providers):
+# rag = BestRAG("http://localhost:6334", "my-docs", reranker=rerank)
 hits = rag.search("which filter fits the old pump?", limit=5)
 ```
 
-With a reranker, `search` first collects a larger pool of candidates, `max(3 * limit, 30)` chunks, with the mode you chose. The reranker scores every candidate, and BestRAG returns the best `limit`.
+With a reranker, `search` first collects `max(3 * limit, 30)` candidate chunks using your chosen mode. The reranker scores every candidate, then BestRAG returns the best `limit` results. A function `rerank(query, texts)` receives all candidates in one call. It returns one score per text, with higher scores ranked first. [Embedding providers](embedding-providers.md#reranker-recipes) has recipes for Cohere and Voyage.
 
-!!! note "What it costs"
-    With the reranker, each search takes about 0.8 seconds instead of milliseconds, and BestRAG uses more memory, because it loads a second model. The first time, it also downloads that model, about 150 MB for `jina-reranker-v1-turbo-en`. [Benchmarks](benchmarks.md) shows how much it helps.
+!!! note "Local reranker speed and memory"
+    With the local reranker, each search takes about 0.8 seconds instead of milliseconds. BestRAG also uses more memory because it loads a second model. The first use downloads that model, about 150 MB for `jina-reranker-v1-turbo-en`. [Benchmarks](benchmarks.md) shows how much it helps.
 
-You can open the same collection twice, once with a reranker and once without, and choose for each search:
+Open the same collection with and without a reranker to choose which to use for each search:
 
 ```python
 reranker = "jinaai/jina-reranker-v1-turbo-en"
@@ -92,9 +91,11 @@ careful = BestRAG("http://localhost:6334", "my-docs", reranker=reranker)
 
 ### The embedding model
 
-`dense_model` sets the model that makes the dense vectors. The default is `BAAI/bge-small-en-v1.5`, a small English model of about 130 MB. You can name any text embedding model that [fastembed](https://github.com/Anush008/fastembed-rs) supports, by its Hugging Face name or by fastembed's model code. An unknown name raises `BestRAGError`.
+`dense_model` sets the model that makes the dense vectors. The default is `BAAI/bge-small-en-v1.5`, a small English model of about 130 MB. Choose any text embedding model that [fastembed](https://github.com/Anush008/fastembed-rs) supports. Use its Hugging Face name or fastembed model code. An unknown name raises `BestRAGError`.
 
-A collection keeps the model it was created with. When you open a collection, BestRAG checks that the model makes vectors of the same size as the stored ones, and raises `BestRAGError` if it does not. It cannot tell apart two models with the same vector size, so always open a collection with the model it was built with. To change the model, index your documents into a new collection.
+`dense_model` can also be your own function, `embed(texts, query)`, for example one that calls OpenAI, Gemini or Cohere. Then nothing is downloaded. [Embedding providers](embedding-providers.md) has a recipe for each provider.
+
+Use the same model for the life of a collection. When you open it, BestRAG checks that the model's vector size matches the stored vectors. A different size raises `BestRAGError`. BestRAG cannot tell apart two models with the same vector size. To change models, index your documents into a new collection.
 
 ### Other languages
 
@@ -112,8 +113,8 @@ rag = BestRAG(
 
 ### The reranker model
 
-`reranker` takes any reranker that fastembed supports. `"jinaai/jina-reranker-v1-turbo-en"` is small and English, and `"jinaai/jina-reranker-v2-base-multilingual"` covers other languages.
+`reranker` takes any reranker that fastembed supports. `"jinaai/jina-reranker-v1-turbo-en"` is small and English, and `"jinaai/jina-reranker-v2-base-multilingual"` covers other languages. It can also be your own function, `rerank(query, texts)`.
 
 ### Where models are stored
 
-Models download on first use and are reused after that. They go into `cache_dir` if you pass it, otherwise into `$BESTRAG_CACHE_DIR`, otherwise into a `bestrag` folder in your user cache folder. If `$HF_HOME` is set, fastembed uses it instead.
+Local models download on first use and are reused after that. BestRAG stores them in `cache_dir` if you pass it. Otherwise, it uses `$BESTRAG_CACHE_DIR` if set. Otherwise, it uses a `bestrag` folder in your user cache folder. If `$HF_HOME` is set, fastembed uses it instead. BestRAG checks the folder first and downloads only missing models. You can put models into a Docker image at build time. See [No model downloads on your servers](embedding-providers.md#no-model-downloads-on-your-servers).
