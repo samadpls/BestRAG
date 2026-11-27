@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "python3 -m pip install -r docs/requirements.txt",
-  "buildCommand": "python3 -m mkdocs build --strict",
+  "installCommand": "curl -LsSf https://astral.sh/uv/0.12.2/install.sh | sh",
+  "buildCommand": "$HOME/.local/bin/uv run --isolated --no-project --python 3.12 --with-requirements docs/requirements.txt mkdocs build --strict",
   "outputDirectory": "site",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- docs/ overrides/ mkdocs.yml vercel.json"
+  "ignoreCommand": "if [ -n \"$VERCEL_GIT_PREVIOUS_SHA\" ] && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- docs/ overrides/ mkdocs.yml vercel.json 2>/dev/null; then exit 0; else exit 1; fi"
 }
