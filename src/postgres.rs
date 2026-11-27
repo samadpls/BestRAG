@@ -31,6 +31,8 @@ pub struct PgStore {
     name: String,
     chunks: String,
     terms: String,
+    /// The dense column's type, `vector` or `halfvec`, set by `ensure`.
+    vector: &'static str,
 }
 
 impl PgStore {
@@ -48,6 +50,7 @@ impl PgStore {
             config,
             tls,
             client: Mutex::new(client),
+            vector: "vector",
         })
     }
 
@@ -62,8 +65,10 @@ impl PgStore {
         Ok(client)
     }
 
-    pub async fn ensure(&self, dim: u64) -> Result<()> {
-        let client = self.client().await?;
+    pub async fn ensure(&mut self, dim: u64) -> Result<()> {
+        // This runs once, right after `connect`, so it needs no lock and no
+        // reconnect.
+        let client = self.client.get_mut();
         let exists: bool = client
             .query_one("SELECT to_regclass($1::text) IS NOT NULL", &[&self.chunks])
             .await?
@@ -77,16 +82,13 @@ impl PgStore {
                     &[&self.chunks],
                 )
                 .await?
-                .and_then(|row| {
-                    let kind: String = row.get(0);
-                    kind.strip_prefix("vector(")?
-                        .strip_suffix(')')?
-                        .parse::<u64>()
-                        .ok()
-                });
+                .and_then(|row| stored_type(&row.get::<_, String>(0)));
             return match stored {
-                Some(size) if size == dim => Ok(()),
-                Some(size) => bail!(
+                Some((vector, size)) if size == dim => {
+                    self.vector = vector;
+                    Ok(())
+                }
+                Some((_, size)) => bail!(
                     "the collection stores {size}-dimension vectors, but the dense model \
                      makes {dim}; use the model it was built with, or a new collection"
                 ),
@@ -94,6 +96,7 @@ impl PgStore {
             };
         }
 
+        let vector = vector_type(dim)?;
         client
             .batch_execute("CREATE EXTENSION IF NOT EXISTS vector")
             .await
@@ -101,6 +104,22 @@ impl PgStore {
                 "pgvector is not enabled in this database; ask an admin to run \
                  CREATE EXTENSION vector",
             )?;
+        if vector == "halfvec" {
+            let version: String = client
+                .query_one(
+                    "SELECT extversion FROM pg_extension WHERE extname = 'vector'",
+                    &[],
+                )
+                .await?
+                .get(0);
+            if !has_halfvec(&version) {
+                bail!(
+                    "vectors with more than 2,000 dimensions are stored as halfvec, which \
+                     needs pgvector 0.7 or later, but this database has pgvector {version}; \
+                     update pgvector, or ask your provider for 2,000 dimensions or fewer"
+                );
+            }
+        }
         let (chunks, terms, name) = (&self.chunks, &self.terms, &self.name);
         client
             .batch_execute(&format!(
@@ -111,11 +130,11 @@ impl PgStore {
                     chunk integer NOT NULL,
                     text text NOT NULL,
                     metadata jsonb,
-                    dense vector({dim}) NOT NULL
+                    dense {vector}({dim}) NOT NULL
                  );
                  CREATE INDEX IF NOT EXISTS {source_idx} ON {chunks} (source);
                  CREATE INDEX IF NOT EXISTS {dense_idx} ON {chunks}
-                    USING hnsw (dense vector_cosine_ops);
+                    USING hnsw (dense {vector}_cosine_ops);
                  CREATE TABLE IF NOT EXISTS {terms} (
                     id uuid NOT NULL REFERENCES {chunks} (id) ON DELETE CASCADE,
                     term bigint NOT NULL,
@@ -129,6 +148,7 @@ impl PgStore {
                 term_id_idx = quote(&format!("{name}_terms_id")),
             ))
             .await?;
+        self.vector = vector;
         Ok(())
     }
 
@@ -159,11 +179,11 @@ impl PgStore {
             tx.execute(
                 &format!(
                     "INSERT INTO {} (id, source, page, chunk, text, metadata, dense)
-                     SELECT id, source, page, chunk, text, metadata, dense::vector
+                     SELECT id, source, page, chunk, text, metadata, dense::{}
                      FROM UNNEST($1::uuid[], $2::text[], $3::int4[], $4::int4[],
                                  $5::text[], $6::jsonb[], $7::text[])
                           AS u(id, source, page, chunk, text, metadata, dense)",
-                    self.chunks
+                    self.chunks, self.vector
                 ),
                 &[&ids, &sources, &pages, &chunks, &texts, &metadata, &dense],
             )
@@ -211,9 +231,10 @@ impl PgStore {
                 let rows = client
                     .query(
                         &format!(
-                            "SELECT id, (1 - (dense <=> $1::text::vector))::float4 FROM {}
-                             ORDER BY dense <=> $1::text::vector LIMIT $2",
-                            self.chunks
+                            "SELECT id, (1 - (dense <=> $1::text::{vector}))::float4 FROM {}
+                             ORDER BY dense <=> $1::text::{vector} LIMIT $2",
+                            self.chunks,
+                            vector = self.vector
                         ),
                         &[&vector_text(vector), &limit],
                     )
@@ -471,6 +492,34 @@ fn quote(identifier: &str) -> String {
     format!("\"{identifier}\"")
 }
 
+/// The column type for a new collection. pgvector's HNSW index takes at most
+/// 2,000 dimensions as `vector`, and 4,000 as `halfvec`, which stores 16-bit
+/// floats. Many API models make 3,072.
+fn vector_type(dim: u64) -> Result<&'static str> {
+    match dim {
+        0..=2000 => Ok("vector"),
+        2001..=4000 => Ok("halfvec"),
+        _ => bail!(
+            "pgvector can index at most 4,000 dimensions, but the dense model makes {dim}; \
+             ask your provider for fewer, for example with its dimensions option"
+        ),
+    }
+}
+
+/// The type and size of a stored dense column, from `format_type`, such as
+/// `halfvec(3072)`.
+fn stored_type(format: &str) -> Option<(&'static str, u64)> {
+    let (kind, size) = format.strip_suffix(')')?.split_once('(')?;
+    let kind = ["vector", "halfvec"].into_iter().find(|k| *k == kind)?;
+    Some((kind, size.parse().ok()?))
+}
+
+/// Whether a pgvector version, such as "0.8.7", has `halfvec` (0.7.0 and later).
+fn has_halfvec(version: &str) -> bool {
+    let mut parts = version.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    (parts.next().unwrap_or(0), parts.next().unwrap_or(0)) >= (0, 7)
+}
+
 fn vector_text(vector: &[f32]) -> String {
     let values: Vec<String> = vector.iter().map(f32::to_string).collect();
     format!("[{}]", values.join(","))
@@ -577,5 +626,27 @@ mod tests {
     #[test]
     fn vectors_are_sent_in_pgvector_text_form() {
         assert_eq!(vector_text(&[0.5, -1.0, 2.25]), "[0.5,-1,2.25]");
+    }
+
+    #[test]
+    fn more_than_2000_dimensions_are_stored_as_halfvec() {
+        assert_eq!(vector_type(384).unwrap(), "vector");
+        assert_eq!(vector_type(2000).unwrap(), "vector");
+        assert_eq!(vector_type(2001).unwrap(), "halfvec");
+        assert_eq!(vector_type(3072).unwrap(), "halfvec");
+        assert!(
+            vector_type(4001)
+                .unwrap_err()
+                .to_string()
+                .contains("dimensions option")
+        );
+
+        assert_eq!(stored_type("vector(384)"), Some(("vector", 384)));
+        assert_eq!(stored_type("halfvec(3072)"), Some(("halfvec", 3072)));
+        assert_eq!(stored_type("sparsevec(100)"), None);
+        assert_eq!(stored_type("text"), None);
+
+        assert!(has_halfvec("0.7.0") && has_halfvec("0.8.7") && has_halfvec("1.0"));
+        assert!(!has_halfvec("0.6.2") && !has_halfvec("0.5.1"));
     }
 }

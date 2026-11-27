@@ -5,11 +5,15 @@ pgvector, and skips a database that is not running (see CONTRIBUTING.md). The
 first run downloads the models.
 """
 
+import functools
+import math
 import os
+import re
 import socket
 import urllib.parse
 import urllib.request
 import uuid
+import zlib
 from pathlib import Path
 
 import pytest
@@ -226,6 +230,179 @@ def test_a_model_with_other_dimensions_is_refused(url, collection, rag):
         BestRAG(url, collection, dense_model="BAAI/bge-base-en-v1.5")
 
 
+# Your own embedding and reranker functions, faked offline: no network, no keys.
+
+
+def hash_embed(texts, query, dim=256):
+    """A fake embedding model: each word adds 1 at a place picked by its hash,
+    so texts that share words point the same way."""
+    vectors = []
+    for text in texts:
+        vector = [0.0] * dim
+        for word in re.findall(r"\w+", text.lower()):
+            vector[zlib.crc32(word.encode()) % dim] += 1.0
+        norm = math.sqrt(sum(x * x for x in vector)) or 1.0
+        vectors.append([x / norm for x in vector])
+    return vectors
+
+
+class FakeEmbedder:
+    """hash_embed that records each call as (number of texts, query)."""
+
+    def __init__(self, dim=256):
+        self.dim = dim
+        self.calls = []
+
+    def __call__(self, texts, query):
+        self.calls.append((len(texts), query))
+        return hash_embed(texts, query, self.dim)
+
+
+def prefer_lahore(query, texts):
+    return [float("Lahore" in text) for text in texts]
+
+
+class RateLimitError(Exception):
+    """Stands in for a provider's error."""
+
+
+@pytest.fixture
+def own(url):
+    """A new collection that embeds with a FakeEmbedder and holds DOCS."""
+    collection = f"test-{uuid.uuid4().hex[:8]}"
+    embed = FakeEmbedder()
+    rag = BestRAG(url, collection, dense_model=embed)
+    rag.add_texts([{"name": name, "text": text} for name, text in DOCS.items()])
+    yield rag, embed, collection
+    rag.drop()
+
+
+def test_your_own_embedder_indexes_and_searches(own):
+    rag, embed, _ = own
+    # The size check at the start, then one call for the four documents.
+    assert embed.calls == [(1, False), (4, False)]
+    assert rag.search("which database is written in rust?", limit=1)[0]["source"] == "qdrant"
+    assert embed.calls[-1] == (1, True)
+    assert rag.search("a famous mosque in pakistan", limit=1, mode="dense")[0]["source"] == "lahore"
+
+
+def test_sparse_search_does_not_call_the_embedder(own):
+    rag, embed, _ = own
+    calls = len(embed.calls)
+    assert rag.search("XJ-9042", mode="sparse")[0]["source"] == "parts"
+    assert len(embed.calls) == calls
+
+
+def test_your_own_embedder_gets_at_most_64_texts_per_call(own):
+    rag, embed, _ = own
+    embed.calls.clear()
+    assert rag.add_texts([{"name": f"note-{i}", "text": f"Note {i}."} for i in range(130)]) == 130
+    assert embed.calls == [(64, False), (64, False), (2, False)]
+
+
+def test_your_own_functions_download_nothing(url, tmp_path, monkeypatch):
+    # fastembed would download into $HF_HOME instead of cache_dir, so watch both.
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf"))
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    rag = BestRAG(
+        url, f"test-{uuid.uuid4().hex[:8]}", dense_model=hash_embed, reranker=prefer_lahore, cache_dir=cache
+    )
+    rag.add_text(DOCS["qdrant"], "qdrant")
+    assert rag.search("vector database", limit=1)[0]["source"] == "qdrant"
+    rag.drop()
+    assert list(tmp_path.rglob("*")) == [cache]
+
+
+def test_a_reranker_function_reorders_hits(own, url):
+    _, embed, collection = own
+    reranking = BestRAG(url, collection, dense_model=embed, reranker=prefer_lahore)
+    hits = reranking.search("which database is written in rust?", limit=2)
+    assert hits[0]["source"] == "lahore"
+    assert [hit["score"] for hit in hits] == [1.0, 0.0]
+
+
+@pytest.mark.parametrize(
+    ("rerank", "message"),
+    [
+        (lambda query, texts: [1.0], "one score per text"),
+        (lambda query, texts: [float("nan")] * len(texts), "NaN"),
+        (lambda query, texts: "high", "one number per text"),
+    ],
+)
+def test_bad_reranker_output_raises(own, url, rerank, message):
+    _, embed, collection = own
+    reranking = BestRAG(url, collection, dense_model=embed, reranker=rerank)
+    with pytest.raises(BestRAGError, match=message):
+        reranking.search("vector database")
+
+
+def test_an_error_in_your_function_keeps_its_cause(own, url):
+    _, embed, collection = own
+
+    def fail(*args):
+        raise RateLimitError("try again in 20 s")
+
+    with pytest.raises(BestRAGError, match="embedding function raised.*try again in 20 s") as error:
+        BestRAG(url, collection, dense_model=fail)
+    assert isinstance(error.value.__cause__, RateLimitError)
+
+    reranking = BestRAG(url, collection, dense_model=embed, reranker=fail)
+    with pytest.raises(BestRAGError, match="reranker function raised") as error:
+        reranking.search("vector database")
+    assert isinstance(error.value.__cause__, RateLimitError)
+
+    def interrupted(*args):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        BestRAG(url, collection, dense_model=interrupted)
+
+
+def test_embedder_output_is_checked_on_every_call(url):
+    def growing(texts, query):  # right for one text, wrong for two
+        return [[0.5] * (8 + i) for i in range(len(texts))]
+
+    rag = BestRAG(url, f"test-{uuid.uuid4().hex[:8]}", dense_model=growing)
+    with pytest.raises(BestRAGError, match="same size"):
+        rag.add_texts([{"name": "a", "text": "one"}, {"name": "b", "text": "two"}])
+    rag.drop()
+
+
+def test_3072_dimensions_work(url):
+    # OpenAI's text-embedding-3-large and Gemini make 3,072. Postgres stores
+    # them as halfvec, because pgvector's vector index stops at 2,000.
+    collection = f"test-{uuid.uuid4().hex[:8]}"
+    rag = BestRAG(url, collection, dense_model=FakeEmbedder(3072))
+    rag.add_texts([{"name": name, "text": text} for name, text in DOCS.items()])
+    assert rag.search("which database is written in rust?", limit=1, mode="dense")[0]["source"] == "qdrant"
+    assert rag.search("which database is written in rust?", limit=1)[0]["source"] == "qdrant"
+    # Opening it again reads the stored size back.
+    BestRAG(url, collection, dense_model=FakeEmbedder(3072))
+    with pytest.raises(BestRAGError, match="3072-dimension"):
+        BestRAG(url, collection, dense_model=FakeEmbedder(1024))
+    rag.drop()
+
+
+def test_postgres_refuses_more_than_4000_dimensions(url):
+    if not url.startswith("postgres"):
+        pytest.skip("Postgres only")
+    with pytest.raises(BestRAGError, match="at most 4,000 dimensions"):
+        BestRAG(url, f"test-{uuid.uuid4().hex[:8]}", dense_model=FakeEmbedder(4096))
+
+
+def test_repr_shows_functions_by_name_only(url):
+    def keyed_embed(texts, query, api_key):
+        return hash_embed(texts, query)
+
+    embed = functools.partial(keyed_embed, api_key="sk-not-a-real-key")
+    rag = BestRAG(url, f"test-{uuid.uuid4().hex[:8]}", dense_model=embed, reranker=prefer_lahore)
+    text = repr(rag)
+    rag.drop()
+    assert text.endswith(", dense_model=partial, reranker=prefer_lahore)")
+    assert "sk-not-a-real-key" not in text
+
+
 def test_tls_is_never_dropped_silently():
     url = URLS["postgres"]
     if not is_running("postgres", url):
@@ -250,3 +427,26 @@ def test_an_explicit_backend_must_match_the_url():
 def test_an_api_key_is_not_accepted_for_postgres():
     with pytest.raises(BestRAGError, match="api_key is for Qdrant"):
         BestRAG("postgresql://u@localhost:5433/app", "docs", api_key="key")
+
+
+# The embedding function is called once before connecting, to learn its size.
+@pytest.mark.parametrize(
+    ("embed", "message"),
+    [
+        (lambda texts, query: [], "one vector per text"),
+        (lambda texts, query: [[]], "empty vector"),
+        (lambda texts, query: [[float("nan")] * 8 for _ in texts], "NaN"),
+        (lambda texts, query: None, "one list of numbers per text"),
+        (lambda texts, query: [["0.5"] * 8 for _ in texts], "one list of numbers per text"),
+    ],
+)
+def test_bad_embedder_output_raises(embed, message):
+    with pytest.raises(BestRAGError, match=message):
+        BestRAG("http://localhost:6334", "docs", dense_model=embed)
+
+
+def test_a_model_is_a_name_or_a_function():
+    with pytest.raises(TypeError, match="dense_model must be a model name or a function"):
+        BestRAG("http://localhost:6334", "docs", dense_model=42)
+    with pytest.raises(TypeError, match="reranker must be a model name or a function"):
+        BestRAG("http://localhost:6334", "docs", reranker=3.5)

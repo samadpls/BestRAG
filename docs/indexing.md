@@ -1,6 +1,6 @@
 # Indexing
 
-Indexing turns your documents into chunks, makes two vectors for each chunk, and stores them in your collection. This page shows how to add, replace and remove documents, and how BestRAG splits text into chunks.
+Indexing splits your documents into chunks and stores them in a collection. Each chunk gets two vectors for search. This page explains how to add, replace and remove documents, and how chunking works.
 
 ## Add a PDF
 
@@ -8,7 +8,7 @@ Indexing turns your documents into chunks, makes two vectors for each chunk, and
 chunks = rag.add_pdf("handbook.pdf")
 ```
 
-`add_pdf` reads the PDF page by page and returns the number of chunks it stored. Each chunk keeps its page number, so a search result can show where its text came from. The document is stored under its file name, here `handbook.pdf`, unless you pass a `name`:
+`add_pdf` reads one page at a time and returns the number of stored chunks. Each chunk keeps its page number, so search results can show where the text came from. By default, the document uses its file name, here `handbook.pdf`. Pass `name` to choose another name:
 
 ```python
 rag.add_pdf(
@@ -45,9 +45,9 @@ rag.add_texts([
 ])
 ```
 
-It returns the total number of chunks stored. BestRAG checks the whole list before it stores anything: no text may be empty, every `metadata` must be a dict, and a name may appear only once in the same call.
+It returns the total number of stored chunks. BestRAG checks the whole list before storing anything. Text must not be empty, each `metadata` must be a dict, and each name must be unique within the call.
 
-A call keeps all of its chunks and vectors in memory until they are stored. For a large collection, send a few hundred documents per call, as the [evaluation](benchmarks.md) does:
+Each call keeps all chunks and vectors in memory until they are stored. For a large collection, send a few hundred documents per call, as the [evaluation](benchmarks.md) does:
 
 ```python
 for start in range(0, len(documents), 256):
@@ -62,14 +62,14 @@ Metadata is a dict that BestRAG stores with every chunk of a document and return
 
 ## Replace a document
 
-Indexing a name again replaces it. BestRAG first deletes everything stored under that name, then stores the new chunks, so you never get duplicates. To update a document, index it again under the same name:
+To update a document, index it again under the same name. BestRAG deletes the old content before storing the new chunks, so you never get duplicates:
 
 ```python
 rag.add_pdf("handbook.pdf")  # the first version
 rag.add_pdf("handbook.pdf")  # a new version replaces it
 ```
 
-On Postgres, the old chunks are deleted and the new ones stored in one transaction, so a failed upload never leaves half a document behind.
+On Postgres, deletion and storage happen in one transaction. A failed upload never leaves a partly stored document.
 
 ## Delete, count and drop
 
@@ -82,14 +82,15 @@ rag.drop()                 # delete the whole collection
 
 - `delete(name)` removes every chunk stored under `name`. If nothing is stored under that name, it does nothing.
 - `count(name=None)` counts chunks, not documents. Without a name, it counts the whole collection.
-- `drop()` deletes the whole collection, with everything in it. On Postgres, it drops both of the collection's tables. To use the collection again, create a new `BestRAG` object, which creates the collection again.
+- `drop()` deletes the collection and all its contents. On Postgres, it drops both tables for the collection. Create a new `BestRAG` object to create the collection again.
 
 !!! warning "`drop()` cannot be undone"
     It deletes every document in the collection, including documents that other programs stored there.
+    To keep a copy first, use your database's backup: `pg_dump` or your provider's point-in-time restore for Postgres, or a snapshot for Qdrant.
 
 ## Check a PDF first
 
-`read_pdf` returns the text that BestRAG reads from each page, in page order. It needs no database and no model, so it is a quick way to check a PDF before you index it, for example to find pages that need OCR:
+`read_pdf` returns the text from each page in page order. It needs no database or model. Use it before indexing to check for pages that need OCR:
 
 ```python
 from bestrag import read_pdf
@@ -102,18 +103,18 @@ print(f"{len(pages)} pages, pages with no text: {empty}")
 ## How chunking works
 
 1. BestRAG reads the text. It reads a PDF one page at a time, so a chunk never spans two pages.
-2. It splits the text into chunks of 200 words, and each chunk overlaps the one before it by 40 words. A tail of 40 words or fewer joins the last chunk, so no chunk is tiny.
-3. It checks every chunk with the dense model's own tokenizer. If a chunk is longer than the model can read, BestRAG splits it in half, again and again if needed, until every part fits. This matters for languages that need more tokens per word than English, such as Arabic.
-4. Each chunk gets two vectors: a dense vector from the embedding model, and a BM25 vector of its words.
+2. It splits the text into chunks of 200 words with a 40-word overlap. Any remaining text of 40 words or fewer joins the last chunk to avoid very small chunks.
+3. With a local model, BestRAG checks each chunk with the model's tokenizer. It repeatedly splits long chunks in half until every part fits the token limit. This matters for languages such as Arabic, which need more tokens per word than English. With an embedding function, BestRAG has no tokenizer for the provider's model and skips this check. A chunk of up to 240 words is far below the input limits of the hosted models in [Embedding providers](embedding-providers.md).
+4. Each chunk gets two vectors: a dense vector from the embedding model or your function, and a BM25 vector of its words.
 
 !!! note "Scripts without spaces"
     Words are counted by the spaces between them. Text written without spaces, such as Chinese, Japanese or Thai, can form one very long "word" that BestRAG cannot split. Then the dense model reads only its start, so the rest of that text is cut off for dense search.
 
 ## Languages
 
-BestRAG keeps text in any script. When it reads a PDF, it rebuilds each line from the positions of its glyphs, so right-to-left scripts such as Arabic come out in reading order, with ligatures and punctuation in the right place.
+BestRAG keeps text in any script. It rebuilds PDF lines from the positions of their glyphs. This puts right-to-left scripts such as Arabic in reading order, with ligatures and punctuation in the right place.
 
-For BM25, text is normalised with Unicode NFKC and with the rules of Lucene's Arabic normaliser, so Arabic spelling variants with and without hamza or short vowels match each other. For example, الإجازة matches الاجازة. The tests include an Arabic PDF that checks these cases.
+For BM25, text is normalised with Unicode NFKC and the rules of Lucene's Arabic normaliser. This makes Arabic spelling variants match, with or without hamza or short vowels. For example, الإجازة matches الاجازة. The tests include an Arabic PDF that checks these cases.
 
 The default models are English models. For other languages, choose multilingual ones, as [Choosing models](search.md#choosing-models) shows.
 

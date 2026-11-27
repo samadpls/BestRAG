@@ -1,10 +1,10 @@
 # Databases
 
-BestRAG stores your documents in Postgres with the pgvector extension, or in Qdrant. The API and the hybrid search are the same on both. This page shows how to connect to each one, and how BestRAG keeps your data safe.
+BestRAG stores documents in Postgres with the pgvector extension or in Qdrant. Both use the same API and hybrid search. This page explains how to connect and how BestRAG protects your data.
 
 ## How the URL picks the database
 
-The first argument of `BestRAG` is a URL, and its scheme decides which database BestRAG uses:
+Pass the database URL as the first argument of `BestRAG`. Its scheme selects the database:
 
 | The URL starts with | Database |
 | --- | --- |
@@ -21,9 +21,9 @@ rag = BestRAG("postgresql://app_user:password@db.example.com:5432/app", "docs")
 rag = BestRAG("https://xyz.cloud.qdrant.io:6334", "docs", api_key="...")
 ```
 
-If the URL starts with anything else, BestRAG raises `BestRAGError` and says which schemes it knows.
+Other URL schemes raise `BestRAGError` with a list of supported schemes.
 
-You can also name the database with `backend="postgres"` or `backend="qdrant"`. This is optional, because the URL already decides. If you pass it, it must agree with the URL. If it does not, BestRAG stops with a clear message instead of a confusing connection error later, and a misspelled name gets a message that lists the valid names.
+You can also set `backend="postgres"` or `backend="qdrant"`. This is optional and must match the URL. A mismatch raises a clear error before BestRAG tries to connect. A misspelled name raises an error that lists the valid names.
 
 ```python
 rag = BestRAG(
@@ -43,7 +43,7 @@ postgresql://user:password@host:5432/database
 
 ### The password
 
-Put the password in the URL, or leave it out and set `$PGPASSWORD`. BestRAG reads `$PGPASSWORD` when the URL has no password, so the password stays out of your code:
+Put the password in the URL or set `$PGPASSWORD`. BestRAG reads this variable when the URL has no password, so you can keep it out of your code:
 
 ```bash
 export PGPASSWORD='...'
@@ -53,13 +53,13 @@ export PGPASSWORD='...'
 rag = BestRAG("postgresql://app_user@db.example.com:5432/app", "docs")
 ```
 
-If the password holds characters that have a meaning in URLs, such as `/`, `?` or `#`, percent-encode them in the URL, or use `$PGPASSWORD` instead.
+Percent-encode characters with a special meaning in URLs, such as `/`, `?` or `#`. You can also use `$PGPASSWORD` to avoid encoding them.
 
 `api_key` is only for Qdrant. If you pass it with a Postgres URL, BestRAG raises `BestRAGError`.
 
 ### Hosted Postgres
 
-BestRAG checks the server's certificate, so it must trust the authority that signed it. Some providers use their own certificate authority. For them, download its certificate and add `sslrootcert=` to the URL:
+BestRAG must trust the authority that signed the server's certificate. Some providers use their own certificate authority. Download that authority's certificate and add `sslrootcert=` to the URL:
 
 | Where your Postgres runs | What to add to the URL |
 | --- | --- |
@@ -89,7 +89,7 @@ With `sslrootcert=<file>`, BestRAG trusts only the certificates in that file. Wi
 
 ### Google Cloud SQL and AlloyDB
 
-The simple way is Google's Auth Proxy: the [Cloud SQL Auth Proxy](https://docs.cloud.google.com/sql/docs/postgres/connect-auth-proxy) or the [AlloyDB Auth Proxy](https://docs.cloud.google.com/alloydb/docs/auth-proxy/connect). It runs next to your app, listens on `127.0.0.1` and encrypts the connection to Google Cloud. BestRAG then connects to it like a local server:
+A simple way to connect is through the [Cloud SQL Auth Proxy](https://docs.cloud.google.com/sql/docs/postgres/connect-auth-proxy) or the [AlloyDB Auth Proxy](https://docs.cloud.google.com/alloydb/docs/auth-proxy/connect). The proxy runs next to your app and listens on `127.0.0.1`. It encrypts the connection to Google Cloud. BestRAG connects to the proxy as a local server:
 
 ```bash
 # Cloud SQL
@@ -104,11 +104,11 @@ alloydb-auth-proxy \
 rag = BestRAG("postgresql://app_user@127.0.0.1:5432/app", "docs")
 ```
 
-You can also connect to Cloud SQL directly. Then pass its server CA certificate, `server-ca.pem` from the Google Cloud console, with `?sslrootcert=/path/to/server-ca.pem`. BestRAG checks the host name against the server's certificate, so you may need to connect with the instance's DNS name instead of its IP address. A direct connection to AlloyDB follows the same rules.
+For a direct Cloud SQL connection, download `server-ca.pem` from the Google Cloud console. Pass this server CA certificate with `?sslrootcert=/path/to/server-ca.pem`. BestRAG checks the host name against the server's certificate. You may need the instance's DNS name instead of its IP address. Direct AlloyDB connections follow the same rules.
 
 ### TLS and `sslmode`
 
-For a Postgres on another machine, BestRAG uses TLS by default and checks the server's certificate and host name. It does this even when the URL asks for less, such as `sslmode=prefer` or `sslmode=require`. BestRAG never turns TLS off on its own, and it never falls back to plain text when TLS fails. If the server does not support TLS, the error message suggests `sslmode=disable`.
+For Postgres on another machine, BestRAG uses TLS by default and checks the server's certificate and host name. These checks also apply with `sslmode=prefer` or `sslmode=require`. BestRAG never turns TLS off on its own or falls back to plain text if TLS fails. If the server does not support TLS, the error message suggests `sslmode=disable`.
 
 On the same machine (`localhost`, `127.0.0.1`, `::1` or a Unix socket), no data crosses a network, so BestRAG connects without TLS unless the URL asks for it.
 
@@ -122,7 +122,7 @@ Any other `sslmode` value raises `BestRAGError`.
 
 ### Inside a private network
 
-Inside a private network without TLS, such as Docker Compose or Kubernetes, you can turn TLS off by adding `sslmode=disable` to the URL. This works for any host, as in other Postgres clients. Here, the app reaches a pgvector service named `postgres`:
+In a private network without TLS, such as Docker Compose or Kubernetes, add `sslmode=disable` to the URL. This works for any host, as in other Postgres clients. The example connects the app to a pgvector service named `postgres`:
 
 ```yaml
 services:
@@ -147,7 +147,7 @@ from bestrag import BestRAG
 rag = BestRAG(os.environ["DATABASE_URL"], "docs")
 ```
 
-Use `sslmode=disable` only inside a private network, because the connection is not encrypted.
+The connection is not encrypted, so use this setting only inside a private network.
 
 ### The pgvector extension
 
@@ -157,20 +157,20 @@ The database needs the pgvector extension. When BestRAG creates a collection, it
 CREATE EXTENSION vector;
 ```
 
-On some managed services, you first allow the extension in the service's settings.
+Some managed services require you to allow the extension in their settings first.
 
 ### Collection names and tables
 
 Each collection becomes two tables:
 
-- `<collection>` holds the chunks: their text, page, metadata and dense vector. The vector has an HNSW index for cosine distance.
+- `<collection>` stores each chunk's text, page, metadata and dense vector. The vector has an HNSW index for cosine distance. This index supports up to 2,000 dimensions for `vector`. Larger vectors use `halfvec` (16-bit numbers), which needs pgvector 0.7 or later. Examples include the 3,072 dimensions of OpenAI's `text-embedding-3-large` or Gemini. Above 4,000 dimensions, BestRAG raises `BestRAGError`. Ask your provider for fewer dimensions.
 - `<collection>_terms` holds the BM25 weight of each word in each chunk.
 
-So on Postgres, a collection name may use only letters, digits, `_` and `-`, up to 48 characters. Other names raise `BestRAGError`.
+Postgres collection names may contain only letters, digits, `_` and `-`, up to 48 characters. Other names raise `BestRAGError`.
 
-BM25 runs as plain SQL over the terms table, with word statistics counted from the documents in your collection, so it needs no extension beyond pgvector. BestRAG merges the dense and BM25 results itself, with the same reciprocal rank fusion formula that Qdrant uses.
+BM25 runs in plain SQL over the terms table. It counts word statistics from your collection's documents and needs no extension beyond pgvector. BestRAG merges dense and BM25 results with the same reciprocal rank fusion formula as Qdrant.
 
-When you index a name again, BestRAG deletes the old chunks and stores the new ones in one transaction, so a failed upload never leaves half a document behind. Managed databases often close idle connections; BestRAG notices this and reconnects on the next call.
+When you index a name again, BestRAG deletes the old chunks and stores the new ones in one transaction. A failed upload never leaves a partly stored document. Managed databases often close idle connections. BestRAG detects this and reconnects on the next call.
 
 ## Qdrant
 
@@ -191,7 +191,7 @@ rag = BestRAG("http://localhost:6334", "docs")
 
 ### Qdrant Cloud or a secured server
 
-Qdrant Cloud has a free tier. Qdrant Cloud and secured servers need an API key, which you pass with `api_key`. It is a good idea to keep the key out of your code. In this example, your code reads it from an environment variable and passes it on:
+Qdrant Cloud has a free tier. It and other secured servers need a key passed with `api_key`. Keep the key out of your code by reading it from an environment variable:
 
 ```python
 import os
@@ -205,20 +205,19 @@ rag = BestRAG(
 )
 ```
 
-As with Postgres, the URL decides: `https://` is encrypted and `http://` is not. So a Qdrant on another machine needs an `https://` URL. With `https://`, the server's certificate is checked against the certificates your system trusts.
+For Qdrant, `https://` encrypts the connection and checks the server's certificate against those your system trusts. `http://` is not encrypted. Use `https://` for Qdrant on another machine.
 
 ### What BestRAG creates in Qdrant
 
-Each chunk is a point with two named vectors: `dense`, compared by cosine similarity, and `bm25`, a sparse vector. The `bm25` index uses Qdrant's IDF modifier, so Qdrant adds the inverse document frequency on the server. BestRAG also adds an index on the `source` field, which holds the name of each document. Qdrant merges the dense and BM25 results itself, with reciprocal rank fusion.
+Each chunk is a point with two named vectors. `dense` uses cosine similarity, and `bm25` is a sparse vector. The `bm25` index uses Qdrant's IDF modifier to add inverse document frequency on the server. BestRAG also indexes `source`, the field that stores each document's name. Qdrant merges dense and BM25 results with reciprocal rank fusion.
 
 ## Keeping your data safe
 
-- **Encrypted connections.** A connection to a Postgres on another machine uses TLS by default, with the certificate and host name checked. BestRAG never turns TLS off on its own; only `sslmode=disable` in the URL does, for private networks. A Qdrant on another machine needs an `https://` URL, because `http://` is not encrypted.
-- **No secrets in output.** Passwords and API keys come only from the URL, `$PGPASSWORD` or `api_key`. They never appear in `repr()`, logs or error messages. `repr()` shows the URL without its password:
+- **Secrets.** Database passwords and API keys come only from the URL, `$PGPASSWORD` or `api_key`. They never appear in `repr()`, logs or error messages. The URL in `repr()` has no password:
 
     ```pycon
     >>> BestRAG("postgresql://app_user:s3cret@localhost:5433/app", "docs")
     BestRAG(url="postgresql://app_user@localhost:5433/app", collection="docs")
     ```
 
-- **Your documents stay with you.** Your documents go only to your own database. Embedding and reranking run on your machine, with no calls to any API. The only download is the models, once.
+- **Documents.** With local models, documents go only to your own database. Embedding and reranking run on your machine without API calls. Only the models are downloaded, once. If your embedding or reranker function calls an API, your documents also go to that provider. See [Embedding providers](embedding-providers.md#privacy-and-speed).
