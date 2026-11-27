@@ -15,7 +15,7 @@ BestRAG stores your documents in [Qdrant](https://qdrant.tech/) and searches the
 - **Optional reranking.** A cross-encoder can read your question together with each candidate and put the best one first. It is off by default, because it makes each search much slower; turn it on when the last bit of ranking quality matters.
 - **PDFs and plain text.** PDFs are read page by page, and every result keeps its page number. Indexing a name again replaces the old version, so you never get duplicates.
 - **Rust underneath.** You call Python, and Rust does the PDF reading, chunking, embeddings and Qdrant calls. Python's lock is released during this work, so your other threads keep running.
-- **Arabic and other languages.** PDFs are read in true reading order, so Arabic does not come out backwards and ligatures like لا stay whole. BM25 treats spelling variants such as الإجازة and الاجازة as the same word. Chunks are measured with the model's own tokenizer, so no text is cut off silently. See [Languages](#languages).
+- **Any language.** PDFs are read in reading order, including right-to-left scripts, and every chunk is measured with the model's own tokenizer, so no text is cut off silently. See [Languages](#languages).
 
 ## 🚀 Install
 
@@ -91,10 +91,6 @@ Arabic PDFs are hard for most text extractors. This is what BestRAG does about t
 | Punctuation ends up at the wrong end of the sentence. | Full stops and commas follow the line's direction. |
 | A search misses a word written with or without hamza or short vowels. | BM25 normalises them the way Lucene's Arabic analyzer does, so الإجازة matches الاجازة. |
 | Arabic needs more tokens per word, so fixed-size chunks get cut off. | It checks every chunk with the model's tokenizer and splits it when it is too long. |
-
-On 8 real Arabic PDFs, BestRAG read the most common words correctly, and none came out backwards:
-
-![Reading Arabic PDFs: BestRAG 1.0 reads the most words correctly, and none backwards](https://raw.githubusercontent.com/samadpls/BestRAG/main/assets/chart-arabic.png)
 
 The tests include an Arabic PDF that checks each of these cases.
 
