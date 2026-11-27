@@ -37,7 +37,7 @@ uv sync
 
 Run `uv sync --reinstall-package bestrag` again after you change Rust code, so Python picks up the new build.
 
-The first time BestRAG starts, it downloads two models, about 290 MB in total: the dense model and the reranker. They go into `$BESTRAG_CACHE_DIR` if you set it, or into your user cache folder. If `$HF_HOME` is set, they go there instead, because fastembed gives that variable priority.
+The first time BestRAG starts, it downloads the embedding model, about 130 MB. The optional reranker, which the tests also use, adds about 150 MB. They go into `$BESTRAG_CACHE_DIR` if you set it, or into your user cache folder. If `$HF_HOME` is set, they go there instead, because fastembed gives that variable priority.
 
 ## Run the checks
 
@@ -77,4 +77,4 @@ It indexes the abstracts into a `scifact` collection once, then reports nDCG@10,
 
 ## Releases (maintainers)
 
-Pushing a tag like `v0.4.0` runs `.github/workflows/wheels.yml`. It builds wheels for Linux (x86_64 and arm64), macOS (Apple Silicon) and Windows (x64), plus a source distribution. Download the artifacts and upload them to PyPI with `uv publish`. There is no Intel Mac wheel, because ONNX Runtime ships no prebuilt library for it.
+Pushing a tag like `v1.0.0` runs `.github/workflows/wheels.yml`. It builds wheels for Linux (x86_64 and arm64), macOS (Apple Silicon) and Windows (x64), plus a source distribution. Download the artifacts and upload them to PyPI with `uv publish`. There is no Intel Mac wheel, because ONNX Runtime ships no prebuilt library for it.

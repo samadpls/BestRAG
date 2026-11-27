@@ -21,7 +21,9 @@ use std::sync::Mutex;
 use tokio::runtime::Runtime;
 
 pub const DEFAULT_DENSE_MODEL: &str = "BAAI/bge-small-en-v1.5";
-pub const DEFAULT_RERANKER: &str = "jinaai/jina-reranker-v1-turbo-en";
+/// A small English reranker (151 MB). Reranking is off by default: on
+/// SciFact it added 0.02 nDCG@10 but made each search about 45 times slower.
+pub const RECOMMENDED_RERANKER: &str = "jinaai/jina-reranker-v1-turbo-en";
 
 const DENSE: &str = "dense";
 const SPARSE: &str = "bm25";
@@ -35,7 +37,8 @@ pub struct Options {
     pub api_key: Option<String>,
     /// A fastembed model code, for example `BAAI/bge-small-en-v1.5`.
     pub dense_model: String,
-    /// A fastembed reranker code, or `None` to keep the first-stage order.
+    /// A fastembed reranker code, such as [`RECOMMENDED_RERANKER`], or `None`
+    /// (the default) to keep Qdrant's fused order.
     pub reranker: Option<String>,
     /// Where models are downloaded. Defaults to `$BESTRAG_CACHE_DIR`, then the
     /// user cache folder. fastembed lets `$HF_HOME` override this when it is set.
@@ -47,7 +50,7 @@ impl Default for Options {
         Self {
             api_key: None,
             dense_model: DEFAULT_DENSE_MODEL.into(),
-            reranker: Some(DEFAULT_RERANKER.into()),
+            reranker: None,
             cache_dir: None,
         }
     }
@@ -514,7 +517,7 @@ mod tests {
             RerankerModel::BGERerankerV2M3
         );
         assert_eq!(
-            reranker_model(DEFAULT_RERANKER).unwrap(),
+            reranker_model(RECOMMENDED_RERANKER).unwrap(),
             RerankerModel::JINARerankerV1TurboEn
         );
         assert_eq!(dense_model(DEFAULT_DENSE_MODEL).unwrap().1, 384);

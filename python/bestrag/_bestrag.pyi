@@ -27,7 +27,7 @@ class BestRAG:
         *,
         api_key: str | None = None,
         dense_model: str = "BAAI/bge-small-en-v1.5",
-        reranker: str | None = "jinaai/jina-reranker-v1-turbo-en",
+        reranker: str | None = None,
         cache_dir: str | PathLike[str] | None = None,
     ) -> None: ...
     def add_pdf(

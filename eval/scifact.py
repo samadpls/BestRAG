@@ -22,7 +22,7 @@ DATA = Path("data/eval/scifact")
 SETUPS = [
     ("BM25 only", "sparse", False),
     ("Dense only", "dense", False),
-    ("Hybrid (dense + BM25, RRF)", "hybrid", False),
+    ("Hybrid (dense + BM25, RRF), the default", "hybrid", False),
     ("Hybrid + reranker", "hybrid", True),
 ]
 
@@ -62,7 +62,7 @@ def main():
     args = parser.parse_args()
 
     corpus, queries, qrels = load()
-    plain = BestRAG(args.url, args.collection, reranker=None)
+    plain = BestRAG(args.url, args.collection)
 
     index_seconds = None
     if plain.count() == 0:
@@ -73,7 +73,7 @@ def main():
         index_seconds = time.perf_counter() - start
         print(f"indexed {len(corpus)} documents ({plain.count()} chunks) in {index_seconds:.0f} s")
 
-    reranking = BestRAG(args.url, args.collection)
+    reranking = BestRAG(args.url, args.collection, reranker="jinaai/jina-reranker-v1-turbo-en")
     results = []
     for label, mode, rerank in SETUPS:
         rag = reranking if rerank else plain

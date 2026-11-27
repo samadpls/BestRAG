@@ -9,7 +9,7 @@ mod python;
 mod store;
 mod text;
 
-pub use store::{BestRag, DEFAULT_DENSE_MODEL, DEFAULT_RERANKER, Document, Hit, Mode, Options};
+pub use store::{BestRag, DEFAULT_DENSE_MODEL, Document, Hit, Mode, Options, RECOMMENDED_RERANKER};
 
 /// The text BestRAG reads from each page of a PDF, in page order. Useful to
 /// check a PDF before indexing it, for example for pages that need OCR.

@@ -1,4 +1,4 @@
-use crate::{BestRag, DEFAULT_DENSE_MODEL, DEFAULT_RERANKER, Document, Hit, Mode, Options};
+use crate::{BestRag, DEFAULT_DENSE_MODEL, Document, Hit, Mode, Options};
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
@@ -33,7 +33,8 @@ fn hit_to_json(hit: Hit) -> Value {
 ///
 /// `url` is Qdrant's gRPC address, usually port 6334. Models download into
 /// `cache_dir` (default: `$BESTRAG_CACHE_DIR`, then the user cache folder),
-/// unless `$HF_HOME` is set. Pass `reranker=None` to skip reranking.
+/// unless `$HF_HOME` is set. Reranking is off by default; pass a reranker name,
+/// such as "jinaai/jina-reranker-v1-turbo-en", to turn it on.
 #[pyclass(name = "BestRAG", module = "bestrag", frozen)]
 struct PyBestRag {
     inner: BestRag,
@@ -50,7 +51,7 @@ impl PyBestRag {
         *,
         api_key = None,
         dense_model = DEFAULT_DENSE_MODEL.to_string(),
-        reranker = Some(DEFAULT_RERANKER.to_string()),
+        reranker = None,
         cache_dir = None,
     ))]
     fn new(

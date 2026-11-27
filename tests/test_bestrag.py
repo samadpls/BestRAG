@@ -183,8 +183,16 @@ def test_bad_input_raises(rag):
         rag.search("x", mode="fuzzy")
 
 
+def test_the_optional_reranker_reorders_hits(collection, rag):
+    reranking = BestRAG(GRPC, collection, reranker="jinaai/jina-reranker-v1-turbo-en")
+    hits = reranking.search("which database is written in rust?", limit=3)
+    assert hits[0]["source"] == "qdrant"
+    # Cross-encoder scores are logits, not the small RRF scores of plain hybrid search.
+    assert hits[0]["score"] != rag.search("which database is written in rust?", limit=1)[0]["score"]
+
+
 def test_repr_never_shows_the_api_key(collection):
-    rag = BestRAG(GRPC, collection, api_key="secret-key", reranker=None)
+    rag = BestRAG(GRPC, collection, api_key="secret-key")
     assert "secret-key" not in repr(rag)
     assert "secret-key" not in str(rag)
 

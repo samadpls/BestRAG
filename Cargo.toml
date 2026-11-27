@@ -1,6 +1,6 @@
 [package]
 name = "bestrag"
-version = "0.4.0"
+version = "1.0.0"
 edition = "2024"
 description = "Hybrid retrieval over Qdrant: dense and sparse search, fused and reranked."
 license = "MIT"
