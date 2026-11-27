@@ -91,3 +91,9 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+# Rust build output and local tooling
+target/
+.toolchain/
+data/
+python/bestrag/*.so
+python/bestrag/*.pyd

@@ -1,0 +1,37 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.20.2
+        ports:
+          - 6333:6333
+          - 6334:6334
+    env:
+      BESTRAG_CACHE_DIR: ${{ github.workspace }}/.models
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/cache@v4
+        with:
+          path: .models
+          key: models-bge-small-en-v1.5-jina-reranker-v1-turbo-en
+
+      - run: cargo fmt --check
+      - run: cargo clippy --all-features --all-targets -- -D warnings
+      - run: cargo test --lib
+      - run: uv sync
+      - name: Wait for Qdrant
+        run: curl -sf --retry 30 --retry-connrefused --retry-delay 1 http://localhost:6333/readyz
+      - run: uv run pytest -q
