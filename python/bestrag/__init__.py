@@ -1,3 +1,3 @@
-from ._bestrag import __version__
+from ._bestrag import BestRAG, BestRAGError, __version__
 
-__all__ = ["__version__"]
+__all__ = ["BestRAG", "BestRAGError", "__version__"]

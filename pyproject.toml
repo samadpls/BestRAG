@@ -23,8 +23,12 @@ Repository = "https://github.com/samadpls/BestRAG"
 
 [dependency-groups]
 dev = ["pytest>=8"]
+eval = ["pyarrow>=18"]
 
 [tool.maturin]
 features = ["python", "pyo3/extension-module"]
 python-source = "python"
 module-name = "bestrag._bestrag"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
