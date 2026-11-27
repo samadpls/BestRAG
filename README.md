@@ -23,7 +23,7 @@ BestRAG stores your documents in [Qdrant](https://qdrant.tech/) and searches the
 pip install bestrag
 ```
 
-Wheels are built for Linux (x86_64 and arm64), macOS on Apple Silicon (13.4 or newer) and Windows (x64), for Python 3.10 and newer. On other systems, pip builds BestRAG from source, which needs [Rust](https://rustup.rs/).
+Wheels are built for Linux (x86_64 and arm64), macOS on Apple Silicon (macOS 14 or newer) and Windows (x64), for Python 3.10 and newer. On other systems, pip builds BestRAG from source, which needs [Rust](https://rustup.rs/).
 
 You also need a Qdrant server. You can run one locally with Docker, or use the free tier of [Qdrant Cloud](https://cloud.qdrant.io/):
 

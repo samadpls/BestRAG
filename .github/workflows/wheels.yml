@@ -21,9 +21,9 @@ jobs:
           - { os: windows-latest, target: x64 }
     runs-on: ${{ matrix.os }}
     env:
-      # The bundled ONNX Runtime is built for macOS 13.4, so the wheel must not
-      # claim to support anything older.
-      MACOSX_DEPLOYMENT_TARGET: "13.4"
+      # The bundled ONNX Runtime needs macOS 13.4, but macOS wheel tags only carry
+      # the major version, so a 13.x tag would also install on 13.0 to 13.3.
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
     steps:
       - uses: actions/checkout@v4
       - uses: PyO3/maturin-action@v1
