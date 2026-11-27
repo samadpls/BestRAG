@@ -1,9 +1,13 @@
-"""End-to-end tests through the Python interface against a real Qdrant.
+"""End-to-end tests through the Python interface, against real databases.
 
-Start Qdrant first (see CONTRIBUTING.md). The first run downloads the models.
+Every test that needs a database runs once on Qdrant and once on Postgres with
+pgvector, and skips a database that is not running (see CONTRIBUTING.md). The
+first run downloads the models.
 """
 
 import os
+import socket
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
@@ -12,8 +16,11 @@ import pytest
 
 from bestrag import BestRAG, BestRAGError, read_pdf
 
-GRPC = os.environ.get("BESTRAG_TEST_QDRANT", "http://localhost:6334")
-REST = os.environ.get("BESTRAG_TEST_QDRANT_REST", "http://localhost:6333")
+URLS = {
+    "qdrant": os.environ.get("BESTRAG_TEST_QDRANT", "http://localhost:6334"),
+    "postgres": os.environ.get("BESTRAG_TEST_POSTGRES", "postgresql://bestrag@localhost:5433/bestrag"),
+}
+QDRANT_REST = os.environ.get("BESTRAG_TEST_QDRANT_REST", "http://localhost:6333")
 PDF = Path(__file__).parent / "fixtures" / "two-pages.pdf"
 ARABIC_PDF = Path(__file__).parent / "fixtures" / "arabic.pdf"
 
@@ -25,35 +32,40 @@ DOCS = {
 }
 
 
-def qdrant_is_up() -> bool:
+def is_running(backend: str, url: str) -> bool:
+    if backend == "qdrant":
+        try:
+            with urllib.request.urlopen(f"{QDRANT_REST}/readyz", timeout=2):
+                return True
+        except OSError:
+            return False
+    parts = urllib.parse.urlsplit(url)
     try:
-        with urllib.request.urlopen(f"{REST}/readyz", timeout=2):
-            return True
+        socket.create_connection((parts.hostname, parts.port or 5432), timeout=2).close()
+        return True
     except OSError:
         return False
 
 
-pytestmark = pytest.mark.skipif(not qdrant_is_up(), reason="needs a running Qdrant server")
-
-
-def drop(collection: str) -> None:
-    request = urllib.request.Request(f"{REST}/collections/{collection}", method="DELETE")
-    urllib.request.urlopen(request, timeout=10).close()
-
-
-@pytest.fixture(scope="module")
-def collection():
-    name = f"test-{uuid.uuid4().hex[:8]}"
-    yield name
-    drop(name)
+@pytest.fixture(scope="module", params=sorted(URLS))
+def url(request):
+    if not is_running(request.param, URLS[request.param]):
+        pytest.skip(f"needs a running {request.param} server")
+    return URLS[request.param]
 
 
 @pytest.fixture(scope="module")
-def rag(collection):
-    rag = BestRAG(GRPC, collection)
+def collection(url):
+    return f"test-{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture(scope="module")
+def rag(url, collection):
+    rag = BestRAG(url, collection)
     for name, text in DOCS.items():
         assert rag.add_text(text, name, {"topic": name}) == 1
-    return rag
+    yield rag
+    rag.drop()
 
 
 @pytest.mark.parametrize(
@@ -183,20 +195,58 @@ def test_bad_input_raises(rag):
         rag.search("x", mode="fuzzy")
 
 
-def test_the_optional_reranker_reorders_hits(collection, rag):
-    reranking = BestRAG(GRPC, collection, reranker="jinaai/jina-reranker-v1-turbo-en")
+def test_the_optional_reranker_reorders_hits(url, collection, rag):
+    reranking = BestRAG(url, collection, reranker="jinaai/jina-reranker-v1-turbo-en")
     hits = reranking.search("which database is written in rust?", limit=3)
     assert hits[0]["source"] == "qdrant"
     # Cross-encoder scores are logits, not the small RRF scores of plain hybrid search.
     assert hits[0]["score"] != rag.search("which database is written in rust?", limit=1)[0]["score"]
 
 
-def test_repr_never_shows_the_api_key(collection):
-    rag = BestRAG(GRPC, collection, api_key="secret-key")
+def test_repr_never_shows_the_qdrant_api_key(url, collection, rag):
+    if not url.startswith("http"):
+        pytest.skip("Qdrant only")
+    rag = BestRAG(url, collection, api_key="secret-key")
     assert "secret-key" not in repr(rag)
     assert "secret-key" not in str(rag)
 
 
-def test_a_model_with_other_dimensions_is_refused(collection):
+def test_repr_never_shows_the_postgres_password(url, collection, rag):
+    if not url.startswith("postgres"):
+        pytest.skip("Postgres only")
+    parts = urllib.parse.urlsplit(url)
+    password = parts.password or "not-a-real-password"
+    netloc = f"{parts.username}:{password}@{parts.hostname}:{parts.port or 5432}"
+    rag = BestRAG(urllib.parse.urlunsplit(parts._replace(netloc=netloc)), collection)
+    assert password not in repr(rag)
+
+
+def test_a_model_with_other_dimensions_is_refused(url, collection, rag):
     with pytest.raises(BestRAGError, match="dimension"):
-        BestRAG(GRPC, collection, dense_model="BAAI/bge-base-en-v1.5")
+        BestRAG(url, collection, dense_model="BAAI/bge-base-en-v1.5")
+
+
+def test_tls_is_never_dropped_silently():
+    url = URLS["postgres"]
+    if not is_running("postgres", url):
+        pytest.skip("Postgres is not running")
+    # The test server has no TLS, so asking for it must fail, not fall back.
+    with pytest.raises(BestRAGError, match="sslmode=disable") as error:
+        BestRAG(url + ("&" if "?" in url else "?") + "sslmode=require", "docs")
+    password = urllib.parse.urlsplit(url).password
+    assert not password or password not in str(error.value)
+
+
+# These need no database: they fail before connecting.
+
+
+def test_an_explicit_backend_must_match_the_url():
+    with pytest.raises(BestRAGError, match="does not match"):
+        BestRAG("postgresql://u:secret@db.example.com/app", "docs", backend="qdrant")
+    with pytest.raises(BestRAGError, match="unknown backend"):
+        BestRAG("http://localhost:6334", "docs", backend="pgvectr")
+
+
+def test_an_api_key_is_not_accepted_for_postgres():
+    with pytest.raises(BestRAGError, match="api_key is for Qdrant"):
+        BestRAG("postgresql://u@localhost:5433/app", "docs", api_key="key")

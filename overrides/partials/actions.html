@@ -1,0 +1,56 @@
+{#-
+  Replaces Material's partials/actions.html (9.8.2). It adds a Copy as Markdown
+  button, which copies the per-page Markdown file that mkdocs-llmstxt writes
+  next to each page, and keeps Material's edit button.
+-#}
+{% set markdown_url = page.file.dest_uri | replace(".html", ".md") | url %}
+<div class="md-page-actions">
+  <button type="button" class="md-page-actions__item" data-markdown="{{ markdown_url }}">
+    <span aria-hidden="true">{% include ".icons/material/content-copy.svg" %}</span>
+    <span class="md-page-actions__label">Copy as Markdown</span>
+  </button>
+  {% if page.edit_url and "content.action.edit" in features %}
+    <a href="{{ page.edit_url }}" title="{{ lang.t('action.edit') }}" class="md-content__button md-icon" rel="edit">
+      {% set icon = config.theme.icon.edit or "material/file-edit-outline" %}
+      {% include ".icons/" ~ icon ~ ".svg" %}
+    </a>
+  {% endif %}
+  <span class="sr-only" role="status" aria-live="polite"></span>
+</div>
+<script>
+  (function (actions) {
+    var button = actions.querySelector("button");
+    var label = button.querySelector(".md-page-actions__label");
+    var status = actions.querySelector("[role=status]");
+    var timer;
+    function show(message) {
+      label.textContent = status.textContent = message;
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        label.textContent = "Copy as Markdown";
+        status.textContent = "";
+      }, 2000);
+    }
+    button.addEventListener("click", async function () {
+      var text = fetch(button.dataset.markdown).then(function (response) {
+        if (!response.ok) throw new Error(response.status);
+        return response.text();
+      });
+      try {
+        try {
+          // Safari allows the write only if it starts during the click, so it gets a promise.
+          await navigator.clipboard.write([new ClipboardItem({
+            "text/plain": text.then(function (markdown) {
+              return new Blob([markdown], { type: "text/plain" });
+            })
+          })]);
+        } catch (error) {
+          await navigator.clipboard.writeText(await text);
+        }
+        show("Copied");
+      } catch (error) {
+        show("Copy failed");
+      }
+    });
+  })(document.currentScript.previousElementSibling);
+</script>

@@ -1,0 +1,157 @@
+/* The BestRAG palette, the same colours as assets/logo.svg. */
+:root {
+  --bestrag-navy: #24376c;
+  --bestrag-crimson: #d22650;
+  --bestrag-periwinkle: #7e85b6;
+  --bestrag-lavender: #b5bde3;
+  --bestrag-pale-blue: #e3ecfb;
+}
+
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--bestrag-navy);
+  --md-primary-fg-color--light: var(--bestrag-periwinkle);
+  --md-primary-fg-color--dark: var(--bestrag-navy);
+  --md-accent-fg-color: var(--bestrag-crimson);
+  --md-accent-fg-color--transparent: #d226501a;
+  --md-typeset-a-color: var(--bestrag-navy);
+  --md-footer-bg-color: var(--bestrag-navy);
+  --md-footer-bg-color--dark: var(--bestrag-navy);
+}
+
+/* The light header uses the pale blue behind the logo and the banner. */
+[data-md-color-scheme="default"] .md-header {
+  --md-primary-fg-color: var(--bestrag-pale-blue);
+  --md-primary-bg-color: var(--bestrag-navy);
+  --md-primary-bg-color--light: #24376cb3;
+}
+
+[data-md-color-scheme="default"] .md-search__form {
+  background-color: var(--md-default-bg-color);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: var(--bestrag-navy);
+  --md-primary-fg-color--light: var(--bestrag-periwinkle);
+  --md-primary-fg-color--dark: var(--bestrag-navy);
+  --md-accent-fg-color: var(--bestrag-crimson);
+  --md-accent-fg-color--transparent: #d226501a;
+  /* Navy text is too dark to read on the dark background. */
+  --md-typeset-a-color: var(--bestrag-lavender);
+  --md-footer-bg-color: var(--bestrag-navy);
+  --md-footer-bg-color--dark: var(--bestrag-navy);
+}
+
+/* Material's default note and warning colours are off-palette. */
+.md-typeset .admonition.note,
+.md-typeset details.note {
+  border-color: var(--bestrag-periwinkle);
+}
+
+.md-typeset .note > .admonition-title,
+.md-typeset .note > summary {
+  background-color: #7e85b61f;
+}
+
+.md-typeset .note > .admonition-title::before,
+.md-typeset .note > summary::before {
+  background-color: var(--bestrag-periwinkle);
+}
+
+.md-typeset .note > summary::after {
+  color: var(--bestrag-periwinkle);
+}
+
+.md-typeset .admonition.warning,
+.md-typeset details.warning {
+  border-color: var(--bestrag-crimson);
+}
+
+.md-typeset .warning > .admonition-title,
+.md-typeset .warning > summary {
+  background-color: #d226501a;
+}
+
+.md-typeset .warning > .admonition-title::before,
+.md-typeset .warning > summary::before {
+  background-color: var(--bestrag-crimson);
+}
+
+.md-typeset .warning > summary::after {
+  color: var(--bestrag-crimson);
+}
+
+/* Narrow table columns would otherwise break names and defaults like
+   `collection` mid-word. The last column holds prose, so it may wrap. */
+.md-typeset td:not(:last-child) code {
+  white-space: nowrap;
+}
+
+/* On phones a wide table scrolls instead of squeezing its prose column. */
+.md-typeset td:last-child {
+  min-width: 15em;
+}
+
+/* The banner already shows the name, so the home page title is only for
+   screen readers and search. */
+.md-typeset .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.md-typeset img.hero {
+  display: block;
+  border-radius: 0.6rem;
+}
+
+/* The Copy as Markdown button and the edit button, above the page title
+   (overrides/partials/actions.html). */
+.md-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+
+.md-typeset .md-page-actions__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  font: inherit;
+  font-size: 0.64rem;
+  line-height: 1.4;
+  color: var(--md-default-fg-color--light);
+  cursor: pointer;
+  background: none;
+  border: 0.05rem solid var(--md-default-fg-color--lighter);
+  border-radius: 0.3rem;
+}
+
+.md-typeset .md-page-actions__item:hover,
+.md-typeset .md-page-actions__item:focus-visible {
+  color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+}
+
+.md-typeset .md-page-actions__item:focus-visible {
+  outline: 0.1rem solid var(--md-accent-fg-color);
+  outline-offset: 0.1rem;
+}
+
+.md-page-actions__item svg {
+  display: block;
+  width: 0.9rem;
+  height: 0.9rem;
+  fill: currentcolor;
+}
+
+.md-page-actions .md-content__button {
+  float: none;
+  margin: 0;
+}
