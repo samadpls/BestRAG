@@ -1,11 +1,15 @@
-//! BestRAG: hybrid retrieval over Qdrant. Dense and BM25 search, fused with
-//! reciprocal rank fusion and reranked by a cross-encoder. The Python package
-//! is built from the same crate with the `python` feature.
+//! BestRAG: hybrid retrieval over Qdrant or Postgres with pgvector. Dense and
+//! BM25 search are fused with reciprocal rank fusion and can be reranked by a
+//! cross-encoder. The Python package is built from the same crate with the
+//! `python` feature.
 
+mod backend;
 mod bm25;
 mod pdf;
+mod postgres;
 #[cfg(feature = "python")]
 mod python;
+mod qdrant;
 mod store;
 mod text;
 

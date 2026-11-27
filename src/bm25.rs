@@ -1,6 +1,7 @@
-//! BM25 as Qdrant sparse vectors. Qdrant applies the IDF part itself
-//! (`Modifier::Idf` on the sparse index), so a document vector only carries
-//! BM25's term-frequency part and a query vector only marks which terms it has.
+//! BM25 as sparse vectors. The database applies the IDF part at search time
+//! (Qdrant with `Modifier::Idf`, Postgres in SQL), so a document vector only
+//! carries BM25's term-frequency part and a query vector only marks which
+//! terms it has.
 
 use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
@@ -8,8 +9,8 @@ use unicode_normalization::char::is_combining_mark;
 
 const K1: f32 = 1.2;
 const B: f32 = 0.75;
-// BM25 wants the average document length, which Qdrant cannot give us.
-// fastembed's BM25 uses the same fixed value.
+// BM25 wants the average document length, which Qdrant cannot give us. Both
+// databases store the same vectors, so both use fastembed's fixed value.
 const AVG_LEN: f32 = 256.0;
 
 /// Lowercased words in any script. NFKC and Arabic normalisation run first,

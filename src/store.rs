@@ -1,20 +1,16 @@
-//! The Qdrant-backed store: indexing, hybrid search and reranking.
+//! The store: models, chunking, indexing, hybrid search and reranking, over
+//! Qdrant or Postgres with pgvector (see `backend`).
 
+use crate::backend::{self, Backend, Kind, Record};
+use crate::postgres::PgStore;
+use crate::qdrant::QdrantStore;
 use crate::{bm25, pdf, text};
 use anyhow::{Context, Result, anyhow, bail};
 use fastembed::{
     AutoDevicePolicy, EmbeddingModel, RerankInitOptions, RerankerModel, TextEmbedding,
     TextInitOptions, TextRerank,
 };
-use qdrant_client::qdrant::{
-    Condition, CountPointsBuilder, CreateCollectionBuilder, CreateFieldIndexCollectionBuilder,
-    DeletePointsBuilder, Distance, FieldType, Filter, Fusion, Modifier, NamedVectors, PointStruct,
-    PrefetchQueryBuilder, QueryPointsBuilder, ScoredPoint, SparseVectorParamsBuilder,
-    SparseVectorsConfigBuilder, UpsertPointsBuilder, Vector, VectorParamsBuilder,
-    VectorsConfigBuilder, vectors_config,
-};
-use qdrant_client::{Payload, Qdrant};
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -25,20 +21,22 @@ pub const DEFAULT_DENSE_MODEL: &str = "BAAI/bge-small-en-v1.5";
 /// SciFact it added 0.02 nDCG@10 but made each search about 45 times slower.
 pub const RECOMMENDED_RERANKER: &str = "jinaai/jina-reranker-v1-turbo-en";
 
-const DENSE: &str = "dense";
-const SPARSE: &str = "bm25";
 const EMBED_BATCH: usize = 32;
-const UPSERT_BATCH: usize = 64;
 // The reranker reorders a wider pool than it returns, so good chunks that the
 // first stage ranked low still get a chance.
 const MIN_RERANK_POOL: usize = 30;
 
 pub struct Options {
+    /// "qdrant" or "postgres". Normally left out: the URL scheme decides, and
+    /// a given name must agree with it.
+    pub backend: Option<String>,
+    /// Qdrant's API key. Postgres takes its password from the URL or
+    /// `$PGPASSWORD`.
     pub api_key: Option<String>,
     /// A fastembed model code, for example `BAAI/bge-small-en-v1.5`.
     pub dense_model: String,
     /// A fastembed reranker code, such as [`RECOMMENDED_RERANKER`], or `None`
-    /// (the default) to keep Qdrant's fused order.
+    /// (the default) to keep the fused order.
     pub reranker: Option<String>,
     /// Where models are downloaded. Defaults to `$BESTRAG_CACHE_DIR`, then the
     /// user cache folder. fastembed lets `$HF_HOME` override this when it is set.
@@ -48,6 +46,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            backend: None,
             api_key: None,
             dense_model: DEFAULT_DENSE_MODEL.into(),
             reranker: None,
@@ -85,15 +84,15 @@ pub struct Hit {
 
 pub struct BestRag {
     runtime: Runtime,
-    client: Qdrant,
-    collection: String,
+    backend: Backend,
     dense: Mutex<TextEmbedding>,
     reranker: Option<Mutex<TextRerank>>,
 }
 
 impl BestRag {
-    /// Connects to Qdrant over gRPC (port 6334), creates the collection if it
-    /// does not exist, and loads the models, downloading them on first use.
+    /// Connects to the database (Qdrant over gRPC, usually port 6334, or
+    /// Postgres with pgvector), creates the collection if it does not exist,
+    /// and loads the models, downloading them on first use.
     pub fn new(url: &str, collection: &str, options: Options) -> Result<Self> {
         let (model, dim) = dense_model(&options.dense_model)?;
         let reranker = options
@@ -101,19 +100,35 @@ impl BestRag {
             .as_deref()
             .map(reranker_model)
             .transpose()?;
+        let kind = backend::kind(url, options.backend.as_deref())?;
 
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()?;
-        let client = {
-            let _guard = runtime.enter();
-            Qdrant::from_url(url).api_key(options.api_key).build()?
+        let backend = match kind {
+            Kind::Qdrant => {
+                Backend::Qdrant(QdrantStore::connect(url, options.api_key, collection)?)
+            }
+            Kind::Postgres => {
+                if options.api_key.is_some() {
+                    bail!(
+                        "api_key is for Qdrant; give Postgres its password in the URL \
+                         or in $PGPASSWORD"
+                    );
+                }
+                Backend::Postgres(Box::new(
+                    runtime.block_on(PgStore::connect(url, collection))?,
+                ))
+            }
         };
         // Checked before loading models, so a wrong URL fails fast instead of
         // after a large download.
-        runtime
-            .block_on(ensure_collection(&client, collection, dim))
-            .with_context(|| format!("could not open collection {collection:?} at {url}"))?;
+        runtime.block_on(backend.ensure(dim)).with_context(|| {
+            format!(
+                "could not open collection {collection:?} at {}",
+                backend::redact(url)
+            )
+        })?;
 
         let cache = options.cache_dir.unwrap_or_else(default_cache_dir);
         // ort's default device policy hands the model to CoreML on macOS, which
@@ -139,8 +154,7 @@ impl BestRag {
 
         Ok(Self {
             runtime,
-            client,
-            collection: collection.into(),
+            backend,
             dense: Mutex::new(dense),
             reranker,
         })
@@ -157,7 +171,7 @@ impl BestRag {
     }
 
     /// Indexes many documents in one go. Much faster than `add_text` in a
-    /// loop: chunks are embedded in batches and Qdrant gets fewer requests.
+    /// loop: chunks are embedded in batches.
     pub fn add_texts(&self, documents: &[Document]) -> Result<usize> {
         let entries = documents
             .iter()
@@ -218,44 +232,30 @@ impl BestRag {
             .embed(&texts, Some(EMBED_BATCH))?
             .into_iter();
 
-        let mut points = Vec::with_capacity(texts.len());
+        let mut records = Vec::with_capacity(texts.len());
         for (source, chunks, metadata) in &entries {
             for (index, chunk) in chunks.iter().enumerate() {
                 let dense = vectors
                     .next()
                     .context("the dense model returned too few vectors")?;
-                let (indices, values) = bm25::document_vector(&chunk.text);
-                let payload = json!({
-                    "text": chunk.text,
-                    "source": source,
-                    "page": chunk.page,
-                    "chunk": index,
-                    "metadata": metadata,
+                records.push(Record {
+                    id: uuid::Uuid::new_v4(),
+                    text: chunk.text.clone(),
+                    source: (*source).to_owned(),
+                    page: chunk.page,
+                    chunk: index,
+                    metadata: (*metadata).clone(),
+                    dense,
+                    sparse: bm25::document_vector(&chunk.text),
                 });
-                points.push(PointStruct::new(
-                    uuid::Uuid::new_v4().to_string(),
-                    NamedVectors::default()
-                        .add_vector(DENSE, dense)
-                        .add_vector(SPARSE, Vector::new_sparse(indices, values)),
-                    Payload::try_from(payload)?,
-                ));
             }
         }
+        let stored = records.len();
         let sources: Vec<String> = names.into_iter().map(str::to_owned).collect();
-
-        self.runtime.block_on(async {
-            // Replacing rather than appending keeps re-indexing a file idempotent.
-            self.delete_sources(sources).await?;
-            for batch in points.chunks(UPSERT_BATCH) {
-                self.client
-                    .upsert_points(
-                        UpsertPointsBuilder::new(&self.collection, batch.to_vec()).wait(true),
-                    )
-                    .await?;
-            }
-            Ok::<_, anyhow::Error>(())
-        })?;
-        Ok(points.len())
+        // Replacing rather than appending keeps re-indexing a file idempotent.
+        self.runtime
+            .block_on(self.backend.replace(sources, records))?;
+        Ok(stored)
     }
 
     pub fn search(&self, query: &str, limit: usize, mode: Mode) -> Result<Vec<Hit>> {
@@ -274,29 +274,13 @@ impl BestRag {
             None => limit,
         } as u64;
 
-        let request = QueryPointsBuilder::new(&self.collection)
-            .limit(pool)
-            .with_payload(true);
-        let request = match mode {
-            Mode::Dense => request.query(self.embed_query(query)?).using(DENSE),
-            Mode::Sparse => request.query(sparse).using(SPARSE),
-            Mode::Hybrid => request
-                .add_prefetch(
-                    PrefetchQueryBuilder::default()
-                        .query(self.embed_query(query)?)
-                        .using(DENSE)
-                        .limit(pool),
-                )
-                .add_prefetch(
-                    PrefetchQueryBuilder::default()
-                        .query(sparse)
-                        .using(SPARSE)
-                        .limit(pool),
-                )
-                .query(Fusion::Rrf),
+        let dense = match mode {
+            Mode::Sparse => None,
+            Mode::Dense | Mode::Hybrid => Some(self.embed_query(query)?),
         };
-        let points = self.runtime.block_on(self.client.query(request))?.result;
-        let mut hits: Vec<Hit> = points.into_iter().map(hit_from_point).collect();
+        let mut hits = self
+            .runtime
+            .block_on(self.backend.search(dense, sparse, mode, pool))?;
 
         if let Some(reranker) = &self.reranker
             && !hits.is_empty()
@@ -320,28 +304,17 @@ impl BestRag {
     /// Removes every chunk stored under `name`.
     pub fn delete(&self, name: &str) -> Result<()> {
         self.runtime
-            .block_on(self.delete_sources(vec![name.to_owned()]))
+            .block_on(self.backend.delete(vec![name.to_owned()]))
     }
 
     /// The number of stored chunks, for one name or for the whole collection.
     pub fn count(&self, name: Option<&str>) -> Result<u64> {
-        let mut request = CountPointsBuilder::new(&self.collection).exact(true);
-        if let Some(name) = name {
-            request = request.filter(source_filter(vec![name.to_owned()]));
-        }
-        let response = self.runtime.block_on(self.client.count(request))?;
-        Ok(response.result.map_or(0, |r| r.count))
+        self.runtime.block_on(self.backend.count(name))
     }
 
-    async fn delete_sources(&self, sources: Vec<String>) -> Result<()> {
-        self.client
-            .delete_points(
-                DeletePointsBuilder::new(&self.collection)
-                    .points(source_filter(sources))
-                    .wait(true),
-            )
-            .await?;
-        Ok(())
+    /// Deletes the whole collection, with everything in it.
+    pub fn drop_collection(&self) -> Result<()> {
+        self.runtime.block_on(self.backend.drop_collection())
     }
 
     /// Halves any chunk the dense model would cut off, so no text goes unseen.
@@ -382,51 +355,6 @@ impl BestRag {
     }
 }
 
-async fn ensure_collection(client: &Qdrant, name: &str, dim: u64) -> Result<()> {
-    if client.collection_exists(name).await? {
-        let info = client.collection_info(name).await?;
-        let stored = info
-            .result
-            .and_then(|i| i.config)
-            .and_then(|c| c.params)
-            .and_then(|p| p.vectors_config)
-            .and_then(|v| v.config)
-            .and_then(|config| match config {
-                vectors_config::Config::ParamsMap(map) => map.map.get(DENSE).map(|p| p.size),
-                vectors_config::Config::Params(_) => None,
-            });
-        return match stored {
-            Some(size) if size == dim => Ok(()),
-            Some(size) => bail!(
-                "the collection stores {size}-dimension vectors, but the dense model makes \
-                 {dim}; use the model it was built with, or a new collection"
-            ),
-            None => bail!("the collection was not created by BestRAG (no {DENSE:?} vector)"),
-        };
-    }
-
-    let mut vectors = VectorsConfigBuilder::default();
-    vectors.add_named_vector_params(DENSE, VectorParamsBuilder::new(dim, Distance::Cosine));
-    let mut sparse = SparseVectorsConfigBuilder::default();
-    sparse.add_named_vector_params(
-        SPARSE,
-        SparseVectorParamsBuilder::default().modifier(Modifier::Idf),
-    );
-    client
-        .create_collection(
-            CreateCollectionBuilder::new(name)
-                .vectors_config(vectors)
-                .sparse_vectors_config(sparse),
-        )
-        .await?;
-    client
-        .create_field_index(
-            CreateFieldIndexCollectionBuilder::new(name, "source", FieldType::Keyword).wait(true),
-        )
-        .await?;
-    Ok(())
-}
-
 /// Finds a fastembed model by its code ("Xenova/bge-small-en-v1.5"), its enum
 /// name, or the original Hugging Face name ("BAAI/bge-small-en-v1.5"), which
 /// only shares the part after the slash with the ONNX copy fastembed uses.
@@ -463,34 +391,6 @@ fn reranker_model(name: &str) -> Result<RerankerModel> {
         .collect();
     find_model(name, &models)
         .ok_or_else(|| anyhow!("unknown reranker {name:?}; pick one fastembed supports"))
-}
-
-/// Matches chunks whose `source` is any of `sources`.
-fn source_filter(sources: Vec<String>) -> Filter {
-    Filter::must([Condition::matches("source", sources)])
-}
-
-fn hit_from_point(point: ScoredPoint) -> Hit {
-    let mut payload: Map<String, Value> = point
-        .payload
-        .into_iter()
-        .map(|(key, value)| (key, value.into_json()))
-        .collect();
-    let mut take_str = |key: &str| match payload.remove(key) {
-        Some(Value::String(s)) => s,
-        _ => String::new(),
-    };
-    let (text, source) = (take_str("text"), take_str("source"));
-    Hit {
-        text,
-        source,
-        score: point.score,
-        page: payload
-            .get("page")
-            .and_then(Value::as_u64)
-            .and_then(|p| u32::try_from(p).ok()),
-        metadata: payload.remove("metadata").unwrap_or(Value::Null),
-    }
 }
 
 fn default_cache_dir() -> PathBuf {

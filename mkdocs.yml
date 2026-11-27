@@ -1,0 +1,111 @@
+site_name: BestRAG
+site_url: https://bestrag.samadpls.com/
+site_description: Documentation for BestRAG, a Python library for hybrid search over Postgres with pgvector or Qdrant.
+site_author: samadpls
+repo_url: https://github.com/samadpls/BestRAG
+repo_name: samadpls/BestRAG
+edit_uri: edit/main/docs/
+copyright: Made by <a href="https://samadpls.com">samadpls</a>
+# The build pins live in docs/ for Vercel, but they are not a page.
+exclude_docs: requirements.txt
+
+theme:
+  name: material
+  # Adds the Copy as Markdown button to every page.
+  custom_dir: overrides
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  font:
+    text: Geist
+    code: Geist Mono
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+    # Shows the "edit this page" button that edit_uri points to.
+    - content.action.edit
+
+extra:
+  # The footer credit is the copyright line alone.
+  generator: false
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+  # Writes /llms.txt, /llms-full.txt and a Markdown copy of every page.
+  - llmstxt:
+      full_output: llms-full.txt
+      markdown_description: >-
+        BestRAG is a Python library for hybrid search in RAG. It stores
+        documents in Postgres with pgvector or in Qdrant, and searches them by
+        meaning (dense vectors) and by exact words (BM25) at once. Each page
+        below is plain Markdown, and llms-full.txt holds all of them in one file.
+      sections:
+        Start here:
+          - index.md: What BestRAG is, a first example and the main features
+          - quickstart.md: Install BestRAG, start a database, index a PDF and search it
+        Guides:
+          - databases.md: Postgres with pgvector and Qdrant, hosted databases, TLS and passwords
+          - indexing.md: Add, replace and delete documents, metadata, chunking and languages
+          - search.md: Search modes, the result dict, the reranker and choosing models
+        Reference:
+          - api.md: Every class, method and argument, with errors and examples
+          - benchmarks.md: Search quality and speed on BEIR SciFact, and how to rerun them
+          - changelog.md: What changed in each version
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      options:
+        # Neon and Qdrant, which Material's bundled Simple Icons lack.
+        custom_icons:
+          - overrides/.icons
+  - pymdownx.highlight:
+      # Tags code blocks with their language, so the Markdown copies keep it.
+      pygments_lang_class: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Introduction: index.md
+  - Quickstart: quickstart.md
+  - Guides:
+      - Databases: databases.md
+      - Indexing: indexing.md
+      - Search: search.md
+  - Reference:
+      - API reference: api.md
+      - Benchmarks: benchmarks.md
+      - Changelog: changelog.md

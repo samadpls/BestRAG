@@ -1,12 +1,10 @@
 name: Wheels
 
-# Builds the wheels and the source distribution. Publishing to PyPI is a
-# separate, manual step (see CONTRIBUTING.md). Pull requests build them too, so
-# a change that breaks a platform shows up before a release.
+# Builds the wheels and the source distribution for a release tag, or when
+# started by hand. Publishing to PyPI is a separate, manual step.
 on:
   push:
     tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 jobs:

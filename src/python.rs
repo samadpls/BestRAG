@@ -28,13 +28,17 @@ fn hit_to_json(hit: Hit) -> Value {
     })
 }
 
-/// Hybrid search over a Qdrant collection. Dense and BM25 results are merged
-/// with reciprocal rank fusion, then reranked by a cross-encoder.
+/// Hybrid search over a Qdrant collection or a Postgres table with pgvector.
+/// Dense and BM25 results are merged with reciprocal rank fusion, and can be
+/// reranked by a cross-encoder.
 ///
-/// `url` is Qdrant's gRPC address, usually port 6334. Models download into
-/// `cache_dir` (default: `$BESTRAG_CACHE_DIR`, then the user cache folder),
-/// unless `$HF_HOME` is set. Reranking is off by default; pass a reranker name,
-/// such as "jinaai/jina-reranker-v1-turbo-en", to turn it on.
+/// `url` picks the database: `https://...:6334` or `http://...:6334` for
+/// Qdrant's gRPC port, `postgresql://user:password@host/db` for Postgres.
+/// Pass `backend="qdrant"` or `backend="postgres"` only to be explicit; it must
+/// agree with the URL. Models download into `cache_dir` (default:
+/// `$BESTRAG_CACHE_DIR`, then the user cache folder), unless `$HF_HOME` is set.
+/// Reranking is off by default; pass a reranker name, such as
+/// "jinaai/jina-reranker-v1-turbo-en", to turn it on.
 #[pyclass(name = "BestRAG", module = "bestrag", frozen)]
 struct PyBestRag {
     inner: BestRag,
@@ -45,10 +49,13 @@ struct PyBestRag {
 #[pymethods]
 impl PyBestRag {
     #[new]
+    // One parameter per Python keyword argument.
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         url,
         collection,
         *,
+        backend = None,
         api_key = None,
         dense_model = DEFAULT_DENSE_MODEL.to_string(),
         reranker = None,
@@ -58,12 +65,14 @@ impl PyBestRag {
         py: Python<'_>,
         url: String,
         collection: String,
+        backend: Option<String>,
         api_key: Option<String>,
         dense_model: String,
         reranker: Option<String>,
         cache_dir: Option<PathBuf>,
     ) -> PyResult<Self> {
         let options = Options {
+            backend,
             api_key,
             dense_model,
             reranker,
@@ -74,7 +83,7 @@ impl PyBestRag {
             .map_err(to_py)?;
         Ok(Self {
             inner,
-            url,
+            url: crate::backend::redact(&url),
             collection,
         })
     }
@@ -154,6 +163,11 @@ impl PyBestRag {
         py.detach(|| self.inner.delete(&name)).map_err(to_py)
     }
 
+    /// Delete the whole collection, with everything in it.
+    fn drop(&self, py: Python<'_>) -> PyResult<()> {
+        py.detach(|| self.inner.drop_collection()).map_err(to_py)
+    }
+
     /// The number of stored chunks, for one `name` or for the whole collection.
     #[pyo3(signature = (name = None))]
     fn count(&self, py: Python<'_>, name: Option<String>) -> PyResult<u64> {
@@ -161,7 +175,8 @@ impl PyBestRag {
             .map_err(to_py)
     }
 
-    // The API key is left out on purpose: reprs end up in logs and notebooks.
+    // Secrets are left out on purpose: the API key is never shown, and the
+    // URL is stored without its password, because reprs end up in logs.
     fn __repr__(&self) -> String {
         format!(
             "BestRAG(url={:?}, collection={:?})",

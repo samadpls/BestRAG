@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "python3 -m pip install -r docs/requirements.txt",
+  "buildCommand": "python3 -m mkdocs build --strict",
+  "outputDirectory": "site",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- docs/ overrides/ mkdocs.yml vercel.json"
+}

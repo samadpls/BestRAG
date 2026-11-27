@@ -4,12 +4,13 @@ build-backend = "maturin"
 
 [project]
 name = "bestrag"
-description = "Hybrid retrieval over Qdrant: dense and sparse search, fused and reranked. Rust underneath."
+description = "Hybrid search for RAG over Postgres with pgvector or Qdrant: dense and BM25 search, fused and reranked."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-authors = [{ name = "Abdul Samad Siddiqui", email = "abdulsamadsid1@gmail.com" }]
-keywords = ["rag", "hybrid-search", "qdrant", "retrieval", "embeddings"]
+authors = [{ name = "samadpls", email = "abdulsamadsid1@gmail.com" }]
+maintainers = [{ name = "samadpls", email = "abdulsamadsid1@gmail.com" }]
+keywords = ["rag", "hybrid-search", "pgvector", "postgres", "qdrant", "retrieval", "embeddings"]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
@@ -19,7 +20,11 @@ classifiers = [
 dynamic = ["version"]
 
 [project.urls]
+Homepage = "https://bestrag.samadpls.com"
+Documentation = "https://bestrag.samadpls.com"
 Repository = "https://github.com/samadpls/BestRAG"
+Changelog = "https://bestrag.samadpls.com/changelog/"
+Issues = "https://github.com/samadpls/BestRAG/issues"
 
 [dependency-groups]
 dev = ["pytest>=8"]
