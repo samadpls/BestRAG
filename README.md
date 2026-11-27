@@ -22,7 +22,7 @@
 
 ## ✨ What it does
 
-- **Postgres or Qdrant, wherever they run.** Any <img src="https://cdn.simpleicons.org/postgresql" height="14" alt=""> Postgres with pgvector works, such as AWS RDS, <img src="https://cdn.simpleicons.org/googlecloud" height="14" alt=""> Google Cloud SQL, Azure, <img src="https://cdn.simpleicons.org/supabase" height="14" alt=""> Supabase or <img src="https://cdn.simpleicons.org/neon" height="14" alt=""> Neon. So does <img src="https://cdn.simpleicons.org/qdrant" height="14" alt=""> Qdrant, on your machine or on Qdrant Cloud.
+- **Postgres or Qdrant, wherever they run.** Any <img src="https://cdn.simpleicons.org/postgresql" height="14" alt=""> Postgres with pgvector works, such as <img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.102.0/icons/aws-color.svg" height="14" alt=""> AWS RDS, <img src="https://cdn.simpleicons.org/googlecloud" height="14" alt=""> Google Cloud SQL, <img src="https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.102.0/icons/azure-color.svg" height="14" alt=""> Azure, <img src="https://cdn.simpleicons.org/supabase" height="14" alt=""> Supabase or <img src="https://cdn.simpleicons.org/neon" height="14" alt=""> Neon. So does <img src="https://cdn.simpleicons.org/qdrant" height="14" alt=""> Qdrant, on your machine or on Qdrant Cloud.
 - **Finds exact words too.** BM25 finds names and codes like `XJ-9042`, even when search by meaning misses them.
 - **Your own embeddings, or the built-in local model.** Use OpenAI, Cohere, Gemini and more with no model download. By default, BestRAG runs a small model on your machine.
 - **PDFs and text.** Every result keeps its page number. Indexing a name again replaces the old version.

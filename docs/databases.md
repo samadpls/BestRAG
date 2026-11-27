@@ -33,7 +33,7 @@ rag = BestRAG(
 )
 ```
 
-## Postgres with pgvector
+## :ai-postgresql: Postgres with pgvector
 
 BestRAG works with any Postgres that has the pgvector extension, wherever it runs: AWS RDS and Aurora, Google Cloud SQL and AlloyDB, Azure, Supabase, Neon or your own server. The URL is a normal Postgres connection URL:
 
@@ -63,10 +63,10 @@ BestRAG must trust the authority that signed the server's certificate. Some prov
 
 | Where your Postgres runs | What to add to the URL |
 | --- | --- |
-| AWS RDS or Aurora | `?sslrootcert=/path/to/global-bundle.pem`, the CA bundle AWS publishes |
-| :simple-googlecloud: Google Cloud SQL or AlloyDB | Nothing, if you connect through Google's Auth Proxy on `127.0.0.1`. See [Google Cloud SQL and AlloyDB](#google-cloud-sql-and-alloydb). |
-| :simple-supabase: Supabase | `?sslrootcert=/path/to/supabase-ca.crt`, the CA certificate from your project's database settings |
-| :brands-neon: Neon, Azure | Nothing. Their certificates are trusted by your system. |
+| :ai-aws: AWS RDS or Aurora | `?sslrootcert=/path/to/global-bundle.pem`, the CA bundle AWS publishes |
+| :ai-googlecloud: Google Cloud SQL or AlloyDB | Nothing, if you connect through Google's Auth Proxy on `127.0.0.1`. See [Google Cloud SQL and AlloyDB](#google-cloud-sql-and-alloydb). |
+| :ai-supabase: Supabase | `?sslrootcert=/path/to/supabase-ca.crt`, the CA certificate from your project's database settings |
+| :ai-neon: Neon, :ai-azure: Azure | Nothing. Their certificates are trusted by your system. |
 | Your own server on `localhost` | Nothing. No TLS is needed on the same machine. |
 
 For example, for AWS RDS or Aurora, download the bundle once:
@@ -172,7 +172,7 @@ BM25 runs in plain SQL over the terms table. It counts word statistics from your
 
 When you index a name again, BestRAG deletes the old chunks and stores the new ones in one transaction. A failed upload never leaves a partly stored document. Managed databases often close idle connections. BestRAG detects this and reconnects on the next call.
 
-## Qdrant
+## :ai-qdrant: Qdrant
 
 ### On your own machine
 

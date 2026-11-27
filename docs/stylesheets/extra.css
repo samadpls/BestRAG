@@ -155,3 +155,6 @@
   float: none;
   margin: 0;
 }
+
+/* Long code lines wrap, so nothing hides behind a scroll bar. Copying still copies the original lines. */
+.md-typeset pre > code { white-space: pre-wrap; overflow-wrap: anywhere; }

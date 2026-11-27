@@ -15,10 +15,15 @@ BestRAG(
     *,
     backend: Literal["qdrant", "postgres"] | None = None,
     api_key: str | None = None,
-    dense_model: str | Callable[[list[str], bool], Sequence[Sequence[float]]] = "BAAI/bge-small-en-v1.5",
-    reranker: str | Callable[[str, list[str]], Sequence[float]] | None = None,
+    dense_model: str | EmbedFunction = "BAAI/bge-small-en-v1.5",
+    reranker: str | RerankFunction | None = None,
     cache_dir: str | PathLike[str] | None = None,
 )
+
+# embed(texts, query) returns one vector per text.
+EmbedFunction = Callable[[list[str], bool], Sequence[Sequence[float]]]
+# rerank(query, texts) returns one score per text. Higher is better.
+RerankFunction = Callable[[str, list[str]], Sequence[float]]
 ```
 
 Connects to the database and creates the collection if needed. For local models, BestRAG opens the collection before downloading or loading them. This means a wrong URL fails before a large download. Models download on first use. When `dense_model` is a function, BestRAG first calls it once with one short text to find the vector size. Every argument after `collection` is keyword-only.

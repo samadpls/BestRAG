@@ -89,7 +89,7 @@ markdown_extensions:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
       options:
-        # Neon and Qdrant, which Material's bundled Simple Icons lack.
+        # Provider and database logos, from LobeHub Icons (MIT) and Simple Icons (CC0).
         custom_icons:
           - overrides/.icons
   - pymdownx.highlight:

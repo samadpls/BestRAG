@@ -43,12 +43,12 @@ Results come best first. Each hit is a dict with `text`, `score`, `source`, `pag
 ## What it does
 
 - **Hybrid search.** Dense vectors find passages that mean the same thing as your question. BM25 finds exact words, names and codes like `XJ-9042`, which dense search often misses. The two lists are merged with reciprocal rank fusion (RRF).
-- **Postgres or Qdrant, wherever it runs.** Use any :simple-postgresql: Postgres with pgvector, such as AWS RDS and Aurora, :simple-googlecloud: Google Cloud SQL and AlloyDB, Azure, :simple-supabase: Supabase, :brands-neon: Neon or your own server. You can also use :brands-qdrant: Qdrant locally, self-hosted or on Qdrant Cloud. The URL selects the database.
+- **Postgres or Qdrant, wherever it runs.** Use any :ai-postgresql: Postgres with pgvector, such as :ai-aws: AWS RDS and Aurora, :ai-googlecloud: Google Cloud SQL and AlloyDB, :ai-azure: Azure, :ai-supabase: Supabase, :ai-neon: Neon or your own server. You can also use :ai-qdrant: Qdrant locally, self-hosted or on Qdrant Cloud. The URL selects the database.
 - **Optional reranking.** A cross-encoder can read your question together with each candidate and put the best one first. It is off by default, because it makes each search much slower.
 - **PDFs and plain text.** PDFs are read page by page. Every result keeps its page number. Indexing a name again replaces the old version, so you never get duplicates.
 - **Fast.** A hybrid search takes milliseconds. `add_texts` embeds many documents in batches.
 - **Any language.** PDFs are read in reading order, including right-to-left scripts. With local models, every chunk is checked against the model's token limit.
-- **Your own embeddings, or the built-in local model.** Use OpenAI, Azure OpenAI, Gemini, Cohere, Voyage, Mistral, Amazon Bedrock or Ollama through a small function, with no model download. Or let BestRAG run a small model on your machine.
+- **Your own embeddings, or the built-in local model.** Use :ai-openai: OpenAI, :ai-azure: Azure OpenAI, :ai-gemini: Gemini, :ai-cohere: Cohere, :ai-voyage: Voyage, :ai-mistral: Mistral, :ai-bedrock: Amazon Bedrock or :ai-ollama: Ollama through a small function, with no model download. Or let BestRAG run a small model on your machine.
 - **Private by default.** With local models, your documents go only to your own database. Embedding and reranking run on your machine without API calls. With an API provider, your documents also go to that provider.
 
 ## Next steps

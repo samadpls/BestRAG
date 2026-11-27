@@ -40,7 +40,7 @@ except BestRAGError as error:
 
 Each recipe uses a provider function to create `BestRAG`. To switch to the free local model, comment out that line and uncomment the line below it.
 
-### OpenAI
+### :ai-openai: OpenAI
 
 ```bash
 pip install openai
@@ -68,7 +68,7 @@ rag = BestRAG(url, "my-docs", dense_model=embed)
 - OpenAI embeds questions and documents the same way, so `query` is not used.
 - Each request can contain up to 2,048 texts and 300,000 tokens. Each text can contain up to 8,192 tokens.
 
-### Azure OpenAI
+### :ai-azure: Azure OpenAI
 
 ```bash
 pip install openai
@@ -101,7 +101,7 @@ rag = BestRAG(url, "my-docs", dense_model=embed)
 - Azure offers `text-embedding-3-small` (1,536), `text-embedding-3-large` (3,072) and `text-embedding-ada-002` (1,536). The limits are the same as OpenAI's: 2,048 texts and 300,000 tokens per request.
 - To sign in with Microsoft Entra ID instead of a key, install `azure-identity` and pass `api_key=get_bearer_token_provider(DefaultAzureCredential(), "https://ai.azure.com/.default")`.
 
-### Google Gemini
+### :ai-gemini: Google Gemini
 
 ```bash
 pip install google-genai
@@ -134,7 +134,7 @@ rag = BestRAG(url, "my-docs", dense_model=embed)
 - `gemini-embedding-2` reads up to 8,192 tokens. `gemini-embedding-001` reads up to 2,048. Google's docs give no limit on the number of texts per request.
 - `GOOGLE_API_KEY` also works. It takes priority if both keys are set.
 
-### Cohere
+### :ai-cohere: Cohere
 
 ```bash
 pip install cohere
@@ -166,7 +166,7 @@ rag = BestRAG(url, "my-docs", dense_model=embed)
 - `embed-v4.0` returns vectors of 1,536 numbers. Set `output_dimension=` to 256, 512, 1,024 or 1,536 to choose the size. The newer `embed-v5.0-pro` and `embed-v5.0-fast` return 2,048 by default.
 - Each request can contain up to 96 texts.
 
-### Voyage AI
+### :ai-voyage: Voyage AI
 
 ```bash
 pip install voyageai
@@ -192,7 +192,7 @@ rag = BestRAG(url, "my-docs", dense_model=embed)
 - `voyage-4` returns vectors of 1,024 numbers. Set `output_dimension=` to 256, 512, 1,024 or 2,048 to choose the size. `voyage-4-large` gives the best results, and `voyage-4-lite` costs less. Vectors from the voyage-4 models work together.
 - Each request can contain up to 1,000 texts. The token limits are 320,000 for `voyage-4`, 120,000 for `voyage-4-large` and 1,000,000 for `voyage-4-lite`.
 
-### Mistral AI
+### :ai-mistral: Mistral AI
 
 ```bash
 pip install mistralai
@@ -225,7 +225,7 @@ rag = BestRAG(url, "my-docs", dense_model=embed)
 - `mistral-embed` returns vectors of 1,024 numbers and reads up to 8,000 tokens per text. For code, `codestral-embed` returns 1,536 by default. Use `output_dimension=` for up to 3,072.
 - Mistral embeds questions and documents the same way.
 
-### Amazon Bedrock
+### :ai-bedrock: Amazon Bedrock
 
 ```bash
 pip install boto3
@@ -260,7 +260,7 @@ rag = BestRAG(url, "my-docs", dense_model=embed)
 - One call per text is slow for large collections. Bedrock also offers Cohere Embed, such as `cohere.embed-v4:0`. It takes up to 96 texts per call, with `texts` and `input_type` in the body.
 - A Bedrock API key in `$AWS_BEARER_TOKEN_BEDROCK` works instead of AWS credentials.
 
-### Ollama
+### :ai-ollama: Ollama
 
 ```bash
 pip install ollama
@@ -299,7 +299,7 @@ def rerank(query: str, texts: list[str]) -> list[float]: ...
 
 Each recipe below uses `embed` from the same provider's embedding recipe above.
 
-### Cohere Rerank
+### :ai-cohere: Cohere Rerank
 
 ```python
 def rerank(query, texts):
@@ -317,7 +317,7 @@ rag = BestRAG(url, "my-docs", dense_model=embed, reranker=rerank)
 - Cohere recommends `rerank-v5.0-pro` for new projects. `rerank-v5.0-fast` is faster. The scores are from 0 to 1.
 - Cohere cuts each text at `max_tokens_per_doc`, which is 4,096 tokens by default. It suggests at most 1,000 texts per request.
 
-### Voyage AI Rerank
+### :ai-voyage: Voyage AI Rerank
 
 ```python
 def rerank(query, texts):
