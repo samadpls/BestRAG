@@ -1,6 +1,6 @@
 # BestRAG
 
-![BestRAG: hybrid search for RAG. Rust inside, Python outside.](https://raw.githubusercontent.com/samadpls/BestRAG/main/assets/hero.png)
+![BestRAG](https://raw.githubusercontent.com/samadpls/BestRAG/main/assets/hero.png)
 
 [![PyPI](https://img.shields.io/pypi/v/bestrag)](https://pypi.org/project/bestrag/)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
