@@ -1,6 +1,6 @@
 # BestRAG { .sr-only }
 
-![](assets/hero.png){ .hero }
+![](assets/hero.svg){ .hero }
 
 BestRAG is an open-source Python library for hybrid search in RAG (retrieval-augmented generation). It stores your documents in Postgres with [pgvector](https://github.com/pgvector/pgvector) or in [Qdrant](https://qdrant.tech/), and it searches them in two ways at once: by meaning, with dense vectors, and by exact words, with BM25. It merges the two result lists, and it can rerank the best results with a cross-encoder.
 

@@ -402,6 +402,8 @@ fn target(url: &str) -> Result<(Config, Option<rustls::ClientConfig>)> {
 
     let local = config.get_hosts().iter().all(|host| match host {
         Host::Tcp(name) => matches!(name.as_str(), "localhost" | "127.0.0.1" | "::1"),
+        // tokio-postgres has this variant only on Unix.
+        #[cfg(unix)]
         Host::Unix(_) => true,
     });
     let tls = match (sslmode.as_deref(), local) {
