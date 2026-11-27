@@ -7,14 +7,14 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/samadpls/BestRAG/blob/main/LICENSE)
 [![Test](https://github.com/samadpls/BestRAG/actions/workflows/test.yml/badge.svg)](https://github.com/samadpls/BestRAG/actions/workflows/test.yml)
 
-BestRAG stores your documents in [Qdrant](https://qdrant.tech/) and searches them in two ways at once: by meaning (dense vectors) and by exact words (BM25). It merges the two result lists, and it can rerank the best results with a cross-encoder. All of this runs in Rust, and you use it from Python.
+BestRAG stores your documents in [Qdrant](https://qdrant.tech/) and searches them in two ways at once: by meaning (dense vectors) and by exact words (BM25). It merges the two result lists, and it can rerank the best results with a cross-encoder.
 
 ## ✨ What it does
 
 - **Hybrid search.** Dense vectors find passages that mean the same thing as your question. BM25 finds exact words, names and codes like `XJ-9042`, which dense search often misses. Qdrant merges both lists with reciprocal rank fusion (RRF).
 - **Optional reranking.** A cross-encoder can read your question together with each candidate and put the best one first. It is off by default, because it makes each search much slower; turn it on when the last bit of ranking quality matters.
 - **PDFs and plain text.** PDFs are read page by page, and every result keeps its page number. Indexing a name again replaces the old version, so you never get duplicates.
-- **Rust underneath.** You call Python, and Rust does the PDF reading, chunking, embeddings and Qdrant calls. Python's lock is released during this work, so your other threads keep running.
+- **Fast.** A hybrid search takes a few milliseconds. PDF reading, chunking, embeddings and the Qdrant calls run in compiled code, and Python's lock is released while they run, so your other threads keep going.
 - **Any language.** PDFs are read in reading order, including right-to-left scripts, and every chunk is measured with the model's own tokenizer, so no text is cut off silently. See [Languages](#languages).
 
 ## 🚀 Install
