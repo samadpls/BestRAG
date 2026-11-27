@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "bestrag"
+description = "Hybrid retrieval over Qdrant: dense and sparse search, fused and reranked. Rust underneath."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Abdul Samad Siddiqui", email = "abdulsamadsid1@gmail.com" }]
+keywords = ["rag", "hybrid-search", "qdrant", "retrieval", "embeddings"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Operating System :: OS Independent",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/samadpls/BestRAG"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.maturin]
+features = ["python", "pyo3/extension-module"]
+python-source = "python"
+module-name = "bestrag._bestrag"
